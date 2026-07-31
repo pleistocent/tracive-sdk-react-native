@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    // Explicit so that the emitted declarations land at lib/typescript/src/**, which is the
+    // path package.json's `types` and `exports` point at. TypeScript 6 requires it rather than
+    // inferring a common source directory.
+    "rootDir": ".",
+    // `src/doctor/**` is a Node program that ships inside `lib` and is invoked by
+    // `bin/tracive-doctor.js`; it is never reachable from the React Native entry points. Nothing
+    // else in `src` may use a Node global — ESLint enforces that separately, because having the
+    // types available is exactly how somebody accidentally writes `new TextEncoder()` and ships
+    // a crash on Hermes.
+    "types": ["node"]
+  },
+  "exclude": ["**/__tests__/**", "example", "scripts", "bin", "lib"]
+}

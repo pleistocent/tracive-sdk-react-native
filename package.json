@@ -1,0 +1,158 @@
+{
+  "name": "@tracive/sdk-react-native",
+  "version": "0.1.0",
+  "description": "Check a phone number, e-mail, bank account, crypto address or social handle against Tracive's scam reports. Phase 1 is OAuth-only and the Tracive API is not live yet.",
+  "license": "Apache-2.0",
+  "homepage": "https://tracive.id",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pleistocent/tracive-sdk-react-native.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pleistocent/tracive-sdk-react-native/issues"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "fraud",
+    "scam",
+    "oauth",
+    "pkce",
+    "tracive"
+  ],
+  "type": "module",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./expo": {
+      "types": "./lib/typescript/src/expo/index.d.ts",
+      "default": "./lib/module/expo/index.js"
+    },
+    "./bare": {
+      "types": "./lib/typescript/src/bare/index.d.ts",
+      "default": "./lib/module/bare/index.js"
+    },
+    "./app.plugin.js": "./app.plugin.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "tracive-doctor": "./bin/tracive-doctor.js"
+  },
+  "files": [
+    "lib",
+    "src",
+    "bin",
+    "app.plugin.js",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/.*"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "clean": "del-cli lib",
+    "build": "bob build",
+    "prepare": "bob build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "fixture:verify": "node scripts/verify-fixture.js",
+    "hygiene": "node scripts/check-hygiene.js",
+    "check:packaging": "npm pack --silent && publint --strict && attw --pack . --ignore-rules cjs-resolves-to-esm no-resolution untyped-resolution",
+    "verify": "npm run hygiene && npm run fixture:verify && npm run typecheck && npm run lint && npm test && npm run build && npm run check:packaging"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/hashes": "^2.2.0"
+  },
+  "//attw": "The three ignored rules are consequences of decisions, not defects. cjs-resolves-to-esm: this package is ESM-only by design, so a CommonJS require resolves to ESM. no-resolution: the node10 resolution mode predates the exports field, and the engines floor here is Node 20.19. untyped-resolution: app.plugin.js is a build-time Expo config plugin entry that is required by the prebuild tooling, never type-imported. Any OTHER packaging problem still fails the check.",
+  "//react": "react is deliberately NOT a peerDependency. This SDK exports no components and no hooks, and no source file imports react; declaring it would only manufacture resolution warnings. Do not add it back because a doctor tool reports a false positive.",
+  "peerDependencies": {
+    "@expo/config-plugins": ">=54.0.0",
+    "@op-engineering/op-sqlite": ">=17.0.0",
+    "expo-crypto": ">=15.0.0",
+    "expo-secure-store": ">=13.0.0",
+    "expo-sqlite": ">=14.0.0",
+    "react-native": ">=0.76.0",
+    "react-native-get-random-values": ">=2.0.0",
+    "react-native-keychain": ">=10.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@expo/config-plugins": {
+      "optional": true
+    },
+    "@op-engineering/op-sqlite": {
+      "optional": true
+    },
+    "expo-crypto": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    },
+    "expo-sqlite": {
+      "optional": true
+    },
+    "react-native-get-random-values": {
+      "optional": true
+    },
+    "react-native-keychain": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^9.39.5",
+    "@expo/config-plugins": "^57.0.6",
+    "@jest/globals": "^29.7.0",
+    "@react-native/babel-preset": "0.86.2",
+    "@react-native/jest-preset": "0.86.2",
+    "@types/node": "^22.19.0",
+    "del-cli": "^7.0.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "jest": "^29.7.0",
+    "prettier": "^3.8.3",
+    "publint": "^0.3.22",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-builder-bob": "^0.43.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.47.0"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "exclude": "**/{__tests__,__fixtures__,__mocks__,types}/**",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  }
+}

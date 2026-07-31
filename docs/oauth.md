@@ -1,0 +1,110 @@
+# Authorization
+
+Phase 1 is OAuth 2.0 with PKCE, and the authorization happens **in the Tracive app already installed
+on the user's device**. There is no API key, no password prompt and no web consent page.
+
+## The flow
+
+```
+your app  --(1) tracive://authorize?...-->  Tracive app
+                                               |
+your app  <--(2) https://your.app/oauth/callback?code=...&state=...
+   |
+   +--(3) POST /oauth/token  (public client)  -->  tokens
+```
+
+```ts
+// 1. Is the app even there? Presence unknown reports NOT installed — see docs/integration.md.
+if (!(await client.oauth?.isTraciveAppInstalled())) {
+  // Send the user to the install page. It carries attribution only: no OAuth parameter, ever.
+}
+
+// 2. Launch. Resolves to `null` on success — read on.
+const outcome = await client.authorize();
+
+// 3. The terminal result arrives here.
+client.onAuthResult((result) => {
+  /* authorized | codeReceived | denied | appNotInstalled | failed */
+});
+```
+
+## Why `authorize()` resolves to `null` instead of waiting
+
+This is the one place where this SDK deliberately diverges from its Kotlin and Swift siblings, which
+suspend `authorize()` until the callback arrives.
+
+On Android, the OS killing your process while another app is in the foreground is routine. A promise
+that suspends until the redirect returns cannot survive that: it would simply never resolve, and the
+user would come back to a screen waiting forever on a sign-in that actually succeeded.
+
+So instead:
+
+- the pending record — `{ state, codeVerifier, redirectUri, createdAt }` — is **persisted to secure
+  storage before the authorize URL is opened**;
+- `authorize()` resolves to `null` for "launched, the outcome will arrive at `handleCallback`", or
+  to `appNotInstalled`, or to `failed`;
+- the terminal outcome is delivered to `onAuthResult` (or returned from `handleCallback` if you
+  route links yourself).
+
+A useful side effect: `launchMode="singleTask"` stops being load-bearing, because a stacked second
+activity instance still finds the pending record on disk.
+
+**Use a persistent `PendingAuthorizationStore`.** The default is in-memory, which is correct for
+tests but gives up exactly the property described above. The Expo and bare adapters provide one
+backed by the platform secure store; the record holds a live PKCE verifier, so it belongs there.
+
+## Why `Linking.openURL` and nothing else
+
+Every in-app-browser library exists to **keep** a URL inside a browser surface. This flow needs the
+OS to **route away** from the browser to a claiming app, which is the opposite requirement:
+
+- an in-app browser on iOS will not fire a Universal Link to another app;
+- pinning an Android Custom Tab to a specific browser package defeats App Link resolution;
+- a web-authentication session is a web-consent primitive, and phase 1 has no web consent page.
+
+The cost accepted is styling: no custom browser chrome. On the happy path no web page is rendered at
+all, and the browser only appears when the App Link is unverified — a configuration bug
+`tracive-doctor` catches at build time.
+
+> This rationale is inherited doctrine from the sibling SDKs and has **not** been re-tested against
+> current OS behaviour. See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+
+## PKCE, state and single-flight refresh
+
+- **S256 only.** `plain` is not a value in any type here, not a parameter, and not a fallback.
+- The verifier is 32 random bytes as base64url: 43 characters, entirely within the RFC 7636
+  unreserved set.
+- `state` is 32 random bytes, compared without an early return, and compared **before** `error` or
+  `code` are read — so a forged redirect cannot make the SDK act on its error message or exchange
+  its code.
+- A stale pending record (default max age **10 minutes**) is refused and produces the three-cause
+  diagnostic described in [integration.md](integration.md).
+- Token refresh is **single-flight**, with the latch assigned before any `await`. Two simultaneous
+  refreshes with the same rotating refresh token look exactly like token reuse to an authorization
+  server, and reuse detection revokes the grant.
+- `grant_revoked` is terminal: stored tokens are cleared and nothing is retried.
+- `signOut()` revokes the **refresh** token (revoking one access token would leave the grant alive
+  and immediately re-issuable), then clears locally **regardless of what the server said** — a
+  sign-out that fails because the network is down is not a sign-out any user would accept.
+
+## Public and confidential clients
+
+`ClientType.PUBLIC` (the default): the SDK performs the token exchange and stores the grant.
+
+`ClientType.CONFIDENTIAL`: the SDK stops at
+`{ type: 'codeReceived', code, codeVerifier, redirectUri }` and **never sees a token**. Your backend
+completes the exchange with its `client_secret`, which must never ship inside a mobile app. Hand the
+resulting grant back with `oauth.adoptTokens(...)` if you want on-device use.
+
+That result object redacts its code and verifier on both `toJSON` and `toString`, because in
+JavaScript a single breadcrumb would otherwise print a live authorization code.
+
+## The install link
+
+When the app is absent, the install URL carries **attribution only** — `utm_source=<clientId>` and
+`utm_medium=tracive_sdk_react_native`. Any OAuth parameter already present on a configured install
+URL is **stripped, not trusted**: an install link is public, gets pasted, shortened and logged, and
+is no place for a verifier.
+
+There is no deferred resume. A fresh PKCE pair is generated when the user comes back and retries,
+which is both simpler and safer than parking a verifier on a public URL.

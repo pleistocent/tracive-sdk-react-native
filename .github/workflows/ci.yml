@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.19', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `--ignore-scripts` because the `prepare` script builds, and the build is a separate,
+      # explicitly reported step below rather than a side effect of installing.
+      - run: npm ci --ignore-scripts
+
+      # The shared grammar fixture is byte-identical across four SDK repositories. If it has been
+      # edited here alone, nothing else in this run is worth doing.
+      - run: npm run fixture:verify
+
+      # This repository is published. Nothing may name an internal identifier — see CONTRIBUTING.md.
+      - run: npm run hygiene
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test -- --coverage
+      - run: npm run build
+
+      # publint and attw catch a broken `exports`/`types` shape, which is the most likely defect in
+      # an ESM-only library and one no unit test can see.
+      - run: npm run check:packaging
+
+# Not yet in this workflow, and deliberately not faked: the on-device grammar job. A green Jest run
+# proves nothing about the JavaScript engine that actually ships — Jest runs on Node with full ICU.
+# Running the same fixture inside an app on an Android emulator is the only check that can fail for
+# the reason the fixture exists. See docs/OPEN_QUESTIONS.md, item 1.

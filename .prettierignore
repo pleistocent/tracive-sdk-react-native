@@ -1,0 +1,7 @@
+lib/
+coverage/
+node_modules/
+
+# The shared grammar fixture is byte-identical across the Tracive SDKs and is pinned by
+# sha256 in scripts/verify-fixture.js. A formatter must never touch it.
+test/fixtures/**
