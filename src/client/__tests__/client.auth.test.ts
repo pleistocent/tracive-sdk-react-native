@@ -123,6 +123,67 @@ describe('401 invalid_token', () => {
   });
 });
 
+/**
+ * A bare `401` with no JSON body is what CDNs, API gateways and misconfigured reverse proxies
+ * emit, and the SDK is explicitly designed to sit behind a partner gateway in phase 2. Requiring
+ * the body to carry exactly `expired_token` meant that in that state the SDK never refreshed, so
+ * every subsequent call failed identically until the app happened to call `authorize()` again.
+ */
+describe('a 401 that carries no recognised code', () => {
+  it('refreshes and re-sends when the body is empty', async () => {
+    const transport = new FakeTransport()
+      .enqueue({ status: 401, headers: {}, body: '' })
+      .enqueue(REFRESHED)
+      .enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build(transport);
+
+    const result = await client.checkScammer(QUERY, { source: 'SERVER' });
+    expect(result.riskTier).toBe('HIGH');
+    expect(transport.requests[1]?.url).toContain('/oauth/token');
+    expect(transport.requests[2]?.headers.authorization).toBe('Bearer fresh-token');
+  });
+
+  it('refreshes when the body carries an unrecognised code', async () => {
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(401, { code: 'token_not_active_yet' }))
+      .enqueue(REFRESHED)
+      .enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build(transport);
+
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+    expect(transport.requests).toHaveLength(3);
+  });
+
+  it('still refreshes at most once, then surfaces the second 401', async () => {
+    const transport = new FakeTransport()
+      .enqueue({ status: 401, headers: {}, body: '' })
+      .enqueue(REFRESHED)
+      .enqueue({ status: 401, headers: {}, body: '' });
+    const { client } = build(transport);
+
+    await expect(client.checkScammer(QUERY, { source: 'SERVER' })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(transport.requests).toHaveLength(3);
+  });
+
+  it('does not refresh in proxy mode, where the SDK holds no grant', async () => {
+    const transport = new FakeTransport().always({ status: 401, headers: {}, body: '' });
+    const client = new TraciveClient({
+      mode: TraciveMode.proxy({ baseUrl: 'https://gateway.your.app/tracive' }),
+      transport,
+      clock: new FakeClock(),
+      cache: new NoOpCheckCache(),
+      retryPolicy: RetryPolicy.disabled,
+    });
+
+    await expect(client.checkScammer(QUERY, { source: 'SERVER' })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(transport.requests).toHaveLength(1);
+  });
+});
+
 describe('two concurrent 401s', () => {
   it('produce exactly one refresh between them', async () => {
     const transport = new FakeTransport()

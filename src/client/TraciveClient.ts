@@ -399,9 +399,20 @@ export class TraciveClient {
           await this.oauth?.clearTokens();
           throw error;
         }
-        if (error.kind === 'expiredToken' && !refreshed && this.#mode.type === 'oauth') {
-          // A 401 is rejected before billing, so re-sending after a refresh cannot double-charge
-          // and deliberately does NOT consume the retry budget.
+        // Refresh on ANY 401 that is not terminal, rather than only on an exact
+        // `expired_token` body. A bare 401 — no body, or a WWW-Authenticate header and nothing
+        // else — is what CDNs, API gateways and misconfigured reverse proxies emit, and this SDK
+        // is designed to sit behind a partner gateway. Requiring the code left the client
+        // permanently stuck in that state: never refreshing, every call failing identically,
+        // until the app happened to call authorize() again.
+        //
+        // `invalidToken` is excluded alongside `grantRevoked`: the server is saying the token is
+        // not a usable credential at all, so a fresh one earns nothing.
+        //
+        // A 401 is rejected before billing, so re-sending after a refresh cannot double-charge,
+        // and this deliberately does NOT consume the retry budget. It can happen at most once
+        // per request either way.
+        if (error.kind !== 'invalidToken' && !refreshed && this.#mode.type === 'oauth') {
           refreshed = true;
           await this.#requireOAuth().refreshTokens();
           continue;
