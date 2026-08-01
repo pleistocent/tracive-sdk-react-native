@@ -328,6 +328,91 @@ describe('the maximum age of a pending record', () => {
   });
 });
 
+/**
+ * A host that abandons the flow mid-way is the only party that can see it happen: the SDK is never
+ * told an app-to-app hop was given up on. Without a cancel, the record sits in the store with a
+ * live PKCE verifier until the ten-minute expiry reaches it.
+ */
+describe('cancelPendingAuthorization()', () => {
+  it('erases the record so a later redirect cannot complete the flow', async () => {
+    const device = newDevice();
+    const clock = new FakeClock();
+    const { oauth, transport, opened } = session({
+      pendingStore: new PersistentPendingStore(device),
+      clock,
+    });
+
+    await oauth.authorize();
+    const state = stateOf(opened[0] ?? '');
+    expect(device.slot).toBeDefined();
+
+    expect(await oauth.cancelPendingAuthorization()).toBe(true);
+
+    expect(device.slot).toBeUndefined();
+    expect(oauth.pendingAuthorizationId).toBeUndefined();
+    const result = await oauth.handleCallback(redirect('code=abc', state));
+    expect(result.type).toBe('failed');
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  it('reports false when there is nothing to cancel, including a second time', async () => {
+    const device = newDevice();
+    const clock = new FakeClock();
+    const { oauth } = session({ pendingStore: new PersistentPendingStore(device), clock });
+
+    expect(await oauth.cancelPendingAuthorization()).toBe(false);
+    await oauth.authorize();
+    expect(await oauth.cancelPendingAuthorization()).toBe(true);
+    expect(await oauth.cancelPendingAuthorization()).toBe(false);
+  });
+
+  /**
+   * The double tap. `authorize()` runs twice, the second supersedes the first, and only then does
+   * the first screen's dismissal arrive. Without the id that late signal cancels the attempt the
+   * user is actually looking at.
+   */
+  it('ignores a signal naming an attempt that has already been superseded', async () => {
+    const device = newDevice();
+    const clock = new FakeClock();
+    const { oauth } = session({ pendingStore: new PersistentPendingStore(device), clock });
+
+    await oauth.authorize();
+    const first = oauth.pendingAuthorizationId;
+    await oauth.authorize();
+    const second = oauth.pendingAuthorizationId;
+    expect(first).toBeDefined();
+    expect(second).not.toBe(first);
+
+    expect(await oauth.cancelPendingAuthorization(first)).toBe(false);
+    expect(device.slot).toBeDefined();
+
+    expect(await oauth.cancelPendingAuthorization(second)).toBe(true);
+    expect(device.slot).toBeUndefined();
+  });
+
+  /**
+   * The id is memory-only, so a new process has none — and an unqualified cancel is the only kind
+   * it can honestly make. A cancel naming an id from a process that is gone is refused, because
+   * this instance never saw that attempt and cannot say the signal belongs to what is on disk.
+   */
+  it('can still cancel a record a previous process left, but only unqualified', async () => {
+    const device = newDevice();
+    const clock = new FakeClock();
+
+    const before = session({ pendingStore: new PersistentPendingStore(device), clock });
+    await before.oauth.authorize();
+    const idFromTheOldProcess = before.oauth.pendingAuthorizationId;
+
+    const after = session({ pendingStore: new PersistentPendingStore(device), clock });
+    expect(after.oauth.pendingAuthorizationId).toBeUndefined();
+    expect(await after.oauth.cancelPendingAuthorization(idFromTheOldProcess)).toBe(false);
+    expect(device.slot).toBeDefined();
+
+    expect(await after.oauth.cancelPendingAuthorization()).toBe(true);
+    expect(device.slot).toBeUndefined();
+  });
+});
+
 describe('a terminal outcome clears the pending record', () => {
   /**
    * The record holds a live PKCE verifier, so leaving it behind after the flow has ended is both a

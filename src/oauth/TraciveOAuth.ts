@@ -163,6 +163,17 @@ export class TraciveOAuth {
   #bufferedResult: AuthResult | undefined;
   #inFlightRefresh: Promise<TraciveTokens> | null = null;
 
+  /**
+   * The id of the authorization THIS instance started and has not yet resolved.
+   *
+   * Memory-only on purpose, so it is `undefined` after a process death even when a record is still
+   * in the store. That asymmetry is the point: a cancel means "this process watched the flow end
+   * without a redirect", and a process that never opened anything has no such observation to
+   * offer. See {@link cancelPendingAuthorization}.
+   */
+  #pendingAuthorizationId: string | undefined;
+  #authorizationCounter = 0;
+
   constructor(options: TraciveOAuthOptions) {
     this.#config = options.mode;
     this.#environment = options.environment ?? TraciveEnvironment.production;
@@ -285,6 +296,9 @@ export class TraciveOAuth {
               }),
       };
     }
+
+    this.#authorizationCounter += 1;
+    this.#pendingAuthorizationId = `authorization-${this.#authorizationCounter}`;
 
     const url = buildAuthorizeUrl({
       config: this.#config,
@@ -445,6 +459,59 @@ export class TraciveOAuth {
     }
   }
 
+  /**
+   * The id of the authorization this instance is waiting on, or `undefined` when there is none.
+   *
+   * Read it once {@link authorize} has returned and hand it back to
+   * {@link cancelPendingAuthorization} later. That is the only way a cancel can be sure of what it
+   * is cancelling — see that method.
+   */
+  get pendingAuthorizationId(): string | undefined {
+    return this.#pendingAuthorizationId;
+  }
+
+  /**
+   * Abandons the pending authorization, so that nothing can complete it later.
+   *
+   * Call it when the flow ends without a redirect: the user came back with the system gesture, or
+   * the screen that started the sign-in was dismissed. No redirect is coming in that case, and
+   * without this the record sits in the store with a live PKCE verifier beside the `state` it
+   * answers to until the ten-minute expiry reaches it. The host is the only party that can see
+   * that happen — the SDK is not told that an app-to-app hop was abandoned.
+   *
+   * **Pass `authorizationId` whenever the caller can.** The signal comes from a screen or an
+   * activity, not from the code that called {@link authorize}, and it can arrive late. Consider a
+   * double tap: `authorize()` runs twice, the second supersedes the first, and only then does the
+   * first screen's dismissal arrive. Cancelling unconditionally at that point kills the second
+   * attempt — the one the user is looking at. With the id, a stale signal is recognised and
+   * ignored.
+   *
+   * @param authorizationId the value {@link pendingAuthorizationId} held when the flow was
+   *   launched. Omitting it cancels whatever is pending, which is right for a host that never has
+   *   two authorizations in flight and is the hazard above for one that does.
+   * @returns whether an authorization was abandoned. `false` means there was nothing pending, or
+   *   that what is pending is not what `authorizationId` named.
+   */
+  async cancelPendingAuthorization(authorizationId?: string): Promise<boolean> {
+    const current = this.#pendingAuthorizationId;
+    if (authorizationId !== undefined && authorizationId !== current) return false;
+    if (current === undefined) {
+      // The store is consulted only when this instance has nothing of its own, which is the one
+      // case where the answer cannot be known without looking: a record an earlier process left
+      // behind. A read that fails is reported as absence — the caller has nothing to do with the
+      // distinction, and a store that cannot be read is one the record will age out of anyway.
+      let recovered: PendingAuthorization | undefined;
+      try {
+        recovered = await this.#pendingStore.read();
+      } catch {
+        recovered = undefined;
+      }
+      if (recovered === undefined) return false;
+    }
+    await this.#clearPendingQuietly();
+    return true;
+  }
+
   startLinkListener(): () => void {
     return startLinkListener(this.#linkSource, (url) => {
       void this.handleCallback(url)
@@ -586,7 +653,9 @@ export class TraciveOAuth {
       }
     }
     await this.#tokenStore.clear();
-    await this.#pendingStore.clear();
+    // Through the quiet clear, so a pending store that refuses the erase cannot turn a sign-out
+    // into a rejection after the tokens have already gone.
+    await this.#clearPendingQuietly();
   }
 
   /**
@@ -634,6 +703,10 @@ export class TraciveOAuth {
    * and the next `authorize()` overwrites it.
    */
   async #clearPendingQuietly(): Promise<void> {
+    // Dropped first and unconditionally. The id names an attempt this instance is waiting on, and
+    // once the record is on its way out there is nothing left for a later cancel to name — even
+    // if the store below refuses the erase.
+    this.#pendingAuthorizationId = undefined;
     try {
       await this.#pendingStore.clear();
     } catch {

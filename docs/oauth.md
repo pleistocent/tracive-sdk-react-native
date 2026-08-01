@@ -90,6 +90,26 @@ So instead:
 A useful side effect: `launchMode="singleTask"` stops being load-bearing, because a stacked second
 activity instance still finds the pending record.
 
+## Cancelling an attempt the user walked away from
+
+No redirect arrives when the user comes back with the system gesture, or when the screen that
+started the sign-in is dismissed. Your app is the only party that can see that: the SDK is never
+told an app-to-app hop was abandoned. Left alone, the record sits in the store with a live PKCE
+verifier until the 10-minute expiry reaches it.
+
+```ts
+const attempt = oauth.pendingAuthorizationId; // read it once authorize() has returned
+// … later, when the screen goes away without a result:
+await oauth.cancelPendingAuthorization(attempt);
+```
+
+**Pass the id whenever you can.** The signal comes from a screen, not from the code that called
+`authorize()`, and it can arrive late — a double tap starts a second attempt, and only then does the
+first screen's dismissal turn up. Cancelling unqualified at that point kills the attempt the user is
+looking at; with the id, the stale signal is recognised and ignored. The id is memory-only, so it is
+`undefined` in a process that did not start the flow, and an unqualified cancel is the only kind
+such a process can honestly make. The call answers whether anything was actually abandoned.
+
 ## The default pending store is not persistent
 
 Writing the record before the launch only survives process death if the store does. The default is
