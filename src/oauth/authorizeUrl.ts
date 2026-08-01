@@ -1,3 +1,4 @@
+import { TraciveEnvironment } from '../model/TraciveEnvironment';
 import type { OAuthConfiguration } from '../model/TraciveMode';
 import { CODE_CHALLENGE_METHOD } from './pkce';
 
@@ -84,6 +85,8 @@ export interface AuthorizeUrlInput {
   readonly config: OAuthConfiguration;
   readonly state: string;
   readonly codeChallenge: string;
+  /** Picks the authorize origin. See `TraciveEnvironment.authorizeUrl`. */
+  readonly environment: TraciveEnvironment;
 }
 
 /**
@@ -106,7 +109,7 @@ export function buildAuthorizeUrl(input: AuthorizeUrlInput): string {
   if (config.partnerUserId !== undefined) {
     params.push(['partner_user_id', config.partnerUserId]);
   }
-  return `${TRACIVE_APP_SCHEME}://authorize?${encodeQuery(params)}`;
+  return `${TraciveEnvironment.authorizeUrl(input.environment)}?${encodeQuery(params)}`;
 }
 
 /**

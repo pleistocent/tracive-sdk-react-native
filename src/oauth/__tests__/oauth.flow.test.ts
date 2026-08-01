@@ -102,7 +102,13 @@ describe('authorize()', () => {
     const { oauth, opened } = build();
     expect(await oauth.authorize()).toBeNull();
     expect(opened).toHaveLength(1);
-    expect(opened[0]).toContain('tracive://authorize?');
+    // The origin, not just the path. This assertion used to read
+    // `tracive://authorize?`, a custom-scheme URL no Tracive build registers —
+    // the app claims `https://tracive.id/oauth/authorize` as an App Link, and
+    // registers custom-scheme hosts `home`, `auth`, `search`, `report` and
+    // `dev-tools` only. Opening the old URL did nothing at all, and this test
+    // agreed with it, so nothing in this repository could have caught it.
+    expect(opened[0]).toContain('https://tracive.id/oauth/authorize?');
   });
 
   it('persists the pending record BEFORE the URL is opened', async () => {

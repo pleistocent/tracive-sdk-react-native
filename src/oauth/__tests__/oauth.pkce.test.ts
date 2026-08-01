@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
+import { TraciveEnvironment } from '../../model/TraciveEnvironment';
+
 import {
   completed,
   FakeClock,
@@ -28,6 +30,7 @@ describe('PKCE', () => {
       config: CONFIG,
       state: 'st',
       codeChallenge: 'ch',
+      environment: TraciveEnvironment.production,
     });
     expect(url).toContain('code_challenge_method=S256');
     expect(url).not.toContain('plain');
@@ -71,6 +74,7 @@ describe('the authorize URL', () => {
       config: { ...CONFIG, partnerUserId: 'user-9' },
       state: 'the-state',
       codeChallenge: 'the-challenge',
+      environment: TraciveEnvironment.production,
     });
     const params = parseCallbackParameters(url);
     expect(params.get('response_type')).toBe('code');

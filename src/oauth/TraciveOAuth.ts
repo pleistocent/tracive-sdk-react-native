@@ -365,6 +365,7 @@ export class TraciveOAuth {
       config: this.#config,
       state,
       codeChallenge: pkce.codeChallenge,
+      environment: this.#environment,
     });
 
     let opened: boolean;
