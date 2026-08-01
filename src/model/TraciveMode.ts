@@ -1,4 +1,5 @@
 import type { ClientType } from './enums';
+import type { TraciveScope } from './scopes';
 
 export interface OAuthConfiguration {
   readonly clientId: string;
@@ -7,7 +8,16 @@ export interface OAuthConfiguration {
    * flow in an in-app WebView, and an App Link does not fire from inside one either.
    */
   readonly redirectUri: string;
-  readonly scopes?: readonly string[];
+  /**
+   * Prefer {@link TraciveScopes}: a mistyped scope is refused by the authorization server as a
+   * whole consent request, not as a narrower grant.
+   *
+   * Left OPEN rather than narrowed to {@link TraciveScope}. The server's scope set is larger than
+   * the three calls this SDK makes, and a partner holding one of the others must not have to wait
+   * for a release here to ask for it. `(string & {})` keeps the constants in autocomplete while
+   * still accepting any string.
+   */
+  readonly scopes?: readonly (TraciveScope | (string & {}))[];
   readonly partnerUserId?: string;
   /** Defaults to `'PUBLIC'`. */
   readonly clientType?: ClientType;

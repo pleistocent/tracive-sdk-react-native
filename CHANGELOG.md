@@ -9,6 +9,18 @@ All notable changes to this project are documented here. The format follows
 Audit follow-up. Nothing here is a published change yet — 0.1.0 has not shipped — so this section
 records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
+### Added
+
+- **`TraciveScopes`, the OAuth scope names as constants**, plus the `TraciveScope` union of the
+  same three strings — `scammer.check`, `credits.read` and `profile.read`. Integrators were
+  retyping the literals, and a mistyped scope is not a narrower grant: the authorization server
+  refuses the whole consent request, so the failure is an integration that cannot authorize at all,
+  visible only against a live server. The constants match the Kotlin, Swift and Flutter SDKs, and
+  the suite pins the wire strings as literals rather than through the constants, so a rename fails
+  the build instead of redefining the shared contract. There is deliberately no constant for the
+  usage-reporting scope: this SDK does not model that endpoint. `OAuthConfiguration.scopes` still
+  accepts any string, because the server's scope set is larger than the three calls made here.
+
 ### Fixed
 
 - **`TraciveQuery.email` rejects a value with no `@`, so a doomed lookup is no longer billed.** It

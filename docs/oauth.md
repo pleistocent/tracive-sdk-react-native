@@ -31,6 +31,43 @@ client.onAuthResult((result) => {
 `client.oauth?.isTraciveAppInstalled()` is still available if you want to know before you ask, for
 example to label a button — but you do not have to call it to be correct.
 
+## Scopes
+
+Ask for them through `TraciveScopes`. Retyping the strings is the one mistake nothing here can
+catch: the scope set is validated by the authorization server, which refuses the **whole** consent
+request rather than granting a narrower one, so a single wrong character is not a reduced grant —
+it is an integration that cannot authorize at all.
+
+```ts
+import { TraciveScopes, TraciveMode } from '@tracive/sdk-react-native';
+
+TraciveMode.oauth({
+  clientId: 'your-client-id',
+  redirectUri: 'https://your.app/oauth/callback',
+  scopes: [TraciveScopes.scammerCheck, TraciveScopes.creditsRead],
+});
+```
+
+| Constant                     | Wire string     | Grants           |
+| ---------------------------- | --------------- | ---------------- |
+| `TraciveScopes.scammerCheck` | `scammer.check` | `checkScammer()` |
+| `TraciveScopes.creditsRead`  | `credits.read`  | `credits()`      |
+| `TraciveScopes.profileRead`  | `profile.read`  | `profile()`      |
+
+The same three strings appear in the Kotlin, Swift and Flutter SDKs, and the test suite pins them as
+literals rather than through the constants, so a rename fails the build instead of quietly
+redefining the shared contract.
+
+`TraciveScope` is the union of the three, for a caller who would rather write the literal than the
+constant — `const scopes: TraciveScope[] = ['scammer.check']` is checked at compile time.
+`OAuthConfiguration.scopes` deliberately does **not** require that union: the server's scope set is
+larger than the three calls this SDK makes, and narrowing the field would lock a partner out of
+asking for one of the others until this package shipped a release.
+
+There is no constant for a call this SDK cannot make. The scope for API usage reporting is one such:
+this package does not model that endpoint, and offering a constant for it would only invite asking a
+user to consent to something no code here will ever exercise.
+
 ## Why `authorize()` resolves to `null` instead of waiting
 
 This is the one place where this SDK deliberately diverges from its Kotlin and Swift siblings, which

@@ -52,6 +52,7 @@ export type { ProfileInfo } from './model/ProfileInfo';
 export { CachePolicy } from './model/CachePolicy';
 export { TraciveEnvironment } from './model/TraciveEnvironment';
 export { TraciveMode, type OAuthConfiguration, type ProxyConfiguration } from './model/TraciveMode';
+export { TraciveScopes, type TraciveScope } from './model/scopes';
 
 // ---------------------------------------------------------------------------------------------
 // Errors

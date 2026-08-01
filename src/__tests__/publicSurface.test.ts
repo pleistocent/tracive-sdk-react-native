@@ -128,6 +128,7 @@ describe('the public surface', () => {
       'TraciveConfigurationError',
       'CheckCacheError',
       'TraciveMode',
+      'TraciveScopes',
       'TraciveEnvironment',
       'CachePolicy',
       'RetryPolicy',

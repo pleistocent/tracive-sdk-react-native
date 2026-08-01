@@ -143,6 +143,7 @@ import {
   TraciveClient,
   TraciveMode,
   TraciveQuery,
+  TraciveScopes,
   isTraciveQueryError,
   isTraciveError,
 } from '@tracive/sdk-react-native';
@@ -151,7 +152,7 @@ const client = new TraciveClient({
   mode: TraciveMode.oauth({
     clientId: 'your-client-id',
     redirectUri: 'https://your.app/oauth/callback',
-    scopes: ['checks:read'],
+    scopes: [TraciveScopes.scammerCheck],
   }),
   cache,
 });
@@ -172,6 +173,12 @@ client.onAuthResult((result) => {
 // above, because the app-to-app hop can outlive this process.
 await client.authorize();
 ```
+
+**Ask for scopes through `TraciveScopes`, not by retyping the strings.** A mistyped scope is not a
+narrower grant: the authorization server refuses the entire consent request, so the integration
+cannot authorize at all. The three constants — `scammerCheck`, `creditsRead`, `profileRead` — are in
+[docs/oauth.md](docs/oauth.md), along with the `TraciveScope` union for anyone who would rather
+write the literal and have the compiler check it.
 
 ```ts
 try {
