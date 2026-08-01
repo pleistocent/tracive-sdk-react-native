@@ -198,6 +198,33 @@ export function decodeProfileInfo(body: unknown): ProfileInfo {
   });
 }
 
+/**
+ * `JSON.parse` for a body the server said was a success.
+ *
+ * Unguarded, a truncated payload or an HTML gateway/captive-portal page served with a 200 threw a
+ * plain `SyntaxError`. That is neither a TraciveError nor a CheckCacheError nor a
+ * TraciveQueryError, so `isTraciveError(e)` was false and every documented error path missed it;
+ * worse, `SERVER_FIRST`'s cache fallback tests `instanceof TraciveError` and rethrew, so the
+ * cache did not engage for exactly the failure where it would have helped. And the check had
+ * already been charged.
+ *
+ * An empty body is deliberately still an empty object: a 204-shaped answer is not malformed.
+ * `extractErrorFields` swallows a parse failure instead, which is right on the error path — there
+ * is already a status to report there, and nothing more to learn from the body.
+ */
+export function parseSuccessBody(body: string, status: number): unknown {
+  try {
+    return JSON.parse(body || '{}');
+  } catch (cause) {
+    throw new TraciveError({
+      kind: 'server',
+      status,
+      message: 'The server returned a body that is not JSON.',
+      cause,
+    });
+  }
+}
+
 export function extractErrorFields(body: string): {
   code?: string;
   message?: string;

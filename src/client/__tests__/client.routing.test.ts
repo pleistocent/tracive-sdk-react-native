@@ -14,6 +14,7 @@ import { InMemoryCheckCache } from '../../cache/CheckCache';
 import { CheckCacheError } from '../../cache/CheckCacheError';
 import { CheckCacheKey } from '../../cache/CheckCacheKey';
 import { PersistentCheckCache } from '../../cache/PersistentCheckCache';
+import { TraciveError } from '../../model/TraciveError';
 import { TraciveMode } from '../../model/TraciveMode';
 import { InMemoryTokenStore } from '../../oauth/TokenStore';
 import { TraciveQuery } from '../../query/TraciveQuery';
@@ -308,5 +309,59 @@ describe('proxy mode', () => {
     expect(transport.lastRequest?.headers['x-gateway-key']).toBe('k');
     expect(Object.keys(transport.lastRequest?.headers ?? {})).not.toContain('api_key');
     expect(() => client.authorize()).toThrow();
+  });
+});
+
+/**
+ * A 200 whose body is truncated, or is a captive-portal / gateway error page served with a 200,
+ * used to escape as a raw `SyntaxError`: not a TraciveError, not a CheckCacheError, so
+ * `isTraciveError(e)` was false and every documented error path missed it. The check had already
+ * been charged and no `checkId` reached the caller to quote in a support ticket.
+ */
+describe('a 2xx body that is not JSON', () => {
+  const HTML = '<!doctype html><html><body>Gateway timeout</body></html>';
+
+  it('surfaces a TraciveError from checkScammer, not a SyntaxError', async () => {
+    const transport = new FakeTransport().always({ status: 200, headers: {}, body: HTML });
+    const { client } = build({ transport });
+
+    const thrown: unknown = await client
+      .checkScammer(QUERY, { source: 'SERVER' })
+      .then(() => undefined)
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(TraciveError);
+    expect((thrown as TraciveError).kind).toBe('server');
+    expect((thrown as TraciveError).status).toBe(200);
+  });
+
+  it('surfaces a TraciveError from credits and profile too', async () => {
+    const transport = new FakeTransport().always({ status: 200, headers: {}, body: HTML });
+    const { client } = build({ transport });
+    await expect(client.credits()).rejects.toBeInstanceOf(TraciveError);
+    await expect(client.profile()).rejects.toBeInstanceOf(TraciveError);
+  });
+
+  it('lets SERVER_FIRST fall back to the cache, which is the point of SERVER_FIRST', async () => {
+    // The fallback tests `error instanceof TraciveError`, so a raw SyntaxError meant the cache
+    // did not engage for exactly the failure where it would have helped.
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(200, checkResponseBody()))
+      .always({ status: 200, headers: {}, body: HTML });
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+    const result = await client.checkScammer(QUERY, { source: 'SERVER_FIRST' });
+    expect(result.riskTier).toBe('HIGH');
+  });
+
+  it('still treats an empty 2xx body as an empty object', async () => {
+    // A 204-shaped answer is not malformed; only unparseable text is.
+    const transport = new FakeTransport().always({ status: 200, headers: {}, body: '' });
+    const { client } = build({ transport });
+    const credits = await client.credits();
+    expect(credits).toBeDefined();
   });
 });

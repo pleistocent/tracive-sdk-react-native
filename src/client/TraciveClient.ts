@@ -27,6 +27,7 @@ import {
   decodeCreditsInfo,
   decodeProfileInfo,
   extractErrorFields,
+  parseSuccessBody,
 } from './responseMapper';
 import { backoffSecondsFor, RetryPolicy } from './RetryPolicy';
 import { apiUrl, proxyUrl, TRACIVE_API_PATHS } from './TraciveApi';
@@ -186,7 +187,7 @@ export class TraciveClient {
       retryable: true,
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
-    return decodeCreditsInfo(JSON.parse(response.body || '{}'));
+    return decodeCreditsInfo(parseSuccessBody(response.body, response.status));
   }
 
   async profile(options?: { signal?: AbortSignal }): Promise<ProfileInfo> {
@@ -196,7 +197,7 @@ export class TraciveClient {
       retryable: true,
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
-    return decodeProfileInfo(JSON.parse(response.body || '{}'));
+    return decodeProfileInfo(parseSuccessBody(response.body, response.status));
   }
 
   async clearCache(): Promise<void> {
@@ -312,7 +313,10 @@ export class TraciveClient {
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
 
-    return decodeCheckResult(JSON.parse(response.body || '{}'), this.#clock.nowMs());
+    return decodeCheckResult(
+      parseSuccessBody(response.body, response.status),
+      this.#clock.nowMs(),
+    );
   }
 
   async #authorizationHeaders(): Promise<Record<string, string>> {
