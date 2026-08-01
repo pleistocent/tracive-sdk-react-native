@@ -7,7 +7,7 @@ import {
   type ConfigPlugin,
 } from '@expo/config-plugins';
 
-import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
+import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
 
 // Re-exported so the plugin's own tests can name it; the definition lives with the flow that
 // probes for the app at runtime. See `authorizeUrl.ts`.
@@ -59,7 +59,7 @@ export function mergeTraciveQueries(manifest: { queries?: unknown[] }): void {
 
   // The scheme <intent> entries keep canOpenURL from rejecting outright on API 30+.
   const intents = target.intent ?? [];
-  for (const scheme of [TRACIVE_APP_SCHEME, 'https']) {
+  for (const scheme of [...TRACIVE_APP_SCHEMES, 'https']) {
     // Matched on action AND scheme: visibility is granted per matching intent, so somebody
     // else's SEND entry for the same scheme does not cover a VIEW lookup.
     const covered = intents.some(
@@ -178,7 +178,11 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
   config = withInfoPlist(config, (modConfig) => {
     const schemes =
       (modConfig.modResults.LSApplicationQueriesSchemes as string[] | undefined) ?? [];
-    if (!schemes.includes(TRACIVE_APP_SCHEME)) schemes.push(TRACIVE_APP_SCHEME);
+    // Both schemes: the sandbox build registers its own, and a probe for it cannot answer without
+    // an entry of its own here.
+    for (const scheme of TRACIVE_APP_SCHEMES) {
+      if (!schemes.includes(scheme)) schemes.push(scheme);
+    }
     modConfig.modResults.LSApplicationQueriesSchemes = schemes;
     return modConfig;
   });

@@ -1,7 +1,8 @@
 import { Linking } from 'react-native';
 
 import type { Diagnostic } from '../diagnostics';
-import { APP_PRESENCE_PROBE_URL } from './authorizeUrl';
+import { TraciveEnvironment } from '../model/TraciveEnvironment';
+import { appPresenceProbeUrl } from './authorizeUrl';
 
 export interface AppPresenceProbe {
   isTraciveAppInstalled(): Promise<boolean>;
@@ -19,14 +20,19 @@ export interface AppPresenceProbe {
  */
 export class LinkingAppPresenceProbe implements AppPresenceProbe {
   readonly #onDiagnostic: ((diagnostic: Diagnostic) => void) | undefined;
+  readonly #environment: TraciveEnvironment;
 
-  constructor(options?: { onDiagnostic?: (diagnostic: Diagnostic) => void }) {
+  constructor(options?: {
+    onDiagnostic?: (diagnostic: Diagnostic) => void;
+    environment?: TraciveEnvironment;
+  }) {
     this.#onDiagnostic = options?.onDiagnostic;
+    this.#environment = options?.environment ?? TraciveEnvironment.production;
   }
 
   async isTraciveAppInstalled(): Promise<boolean> {
     try {
-      return await Linking.canOpenURL(APP_PRESENCE_PROBE_URL);
+      return await Linking.canOpenURL(appPresenceProbeUrl(this.#environment));
     } catch (error) {
       this.#onDiagnostic?.({
         code: 'app_presence_probe_failed',

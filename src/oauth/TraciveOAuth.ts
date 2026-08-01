@@ -21,7 +21,7 @@ import type { OAuthConfiguration } from '../model/TraciveMode';
 import { LinkingAppPresenceProbe, type AppPresenceProbe } from './AppPresenceProbe';
 import { LinkingAuthorizeLauncher, type AuthorizeLauncher } from './AuthorizeLauncher';
 import {
-  APP_PRESENCE_PROBE_URL,
+  appPresenceProbeUrl,
   buildAuthorizeUrl,
   buildInstallUrl,
   DEFAULT_INSTALL_URL,
@@ -159,7 +159,11 @@ function parseJsonBody(body: string): Record<string, unknown> {
 export class TraciveOAuth {
   static readonly traciveAppScheme = TRACIVE_APP_SCHEME;
   static readonly traciveAndroidPackage = TRACIVE_ANDROID_PACKAGE;
-  static readonly appPresenceProbeUrl = APP_PRESENCE_PROBE_URL;
+  /**
+   * The presence probe for an environment. A function rather than a constant since 2 August 2026:
+   * the sandbox build registers its own scheme, and probing production's cannot see it.
+   */
+  static readonly appPresenceProbeUrl = appPresenceProbeUrl;
   static readonly defaultInstallUrl = DEFAULT_INSTALL_URL;
 
   readonly #config: OAuthConfiguration;
@@ -244,9 +248,10 @@ export class TraciveOAuth {
     this.#onDiagnostic = options.onDiagnostic;
     this.#presence =
       options.presence ??
-      new LinkingAppPresenceProbe(
-        options.onDiagnostic === undefined ? {} : { onDiagnostic: options.onDiagnostic },
-      );
+      new LinkingAppPresenceProbe({
+        environment: this.#environment,
+        ...(options.onDiagnostic === undefined ? {} : { onDiagnostic: options.onDiagnostic }),
+      });
     this.#launcher = options.launcher ?? new LinkingAuthorizeLauncher();
     this.#linkSource = options.linkSource ?? linkingLinkSource;
     this.#clock = options.clock ?? systemClock;

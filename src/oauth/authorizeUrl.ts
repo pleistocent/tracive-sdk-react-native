@@ -77,8 +77,39 @@ export function redirectTarget(url: string): string {
  * wrong. Nothing about that failure points at the discrepancy.
  */
 export const TRACIVE_APP_SCHEME = 'tracive';
+
+/**
+ * URL scheme the sandbox Tracive build registers.
+ *
+ * Sandbox and production are separate worlds by design: neither claims the other's scheme, so a
+ * probe for one cannot see the other. The scheme is what this SDK probes for; the sandbox build's
+ * application id is not something it needs, and naming one here would disclose that it exists.
+ */
+export const TRACIVE_SANDBOX_APP_SCHEME = 'tracivedev';
+
+/** Every scheme a host manifest must declare for the probe to answer. */
+export const TRACIVE_APP_SCHEMES = [TRACIVE_APP_SCHEME, TRACIVE_SANDBOX_APP_SCHEME] as const;
+
 export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
-export const APP_PRESENCE_PROBE_URL = 'tracive://authorize';
+
+/**
+ * The URL probed to decide whether the Tracive app is installed.
+ *
+ * **The scheme alone, with no host.** This was `tracive://authorize` until 2 August 2026, and
+ * Android resolves such a probe by intent-filter matching — a filter naming a host requires that
+ * host to match. The Tracive app registers custom-scheme hosts `home`, `auth`, `search`, `report`
+ * and `dev-tools`, and none named `authorize`, so the probe answered "not installed" on every
+ * Android device *including the ones holding the app*, and those users were sent to the install
+ * page while already holding it. iOS was unaffected: `canOpenURL` there inspects only the scheme.
+ *
+ * A custom base URL is a partner proxy or a local server; the app on the device is still the
+ * production one unless the integrator says otherwise.
+ */
+export function appPresenceProbeUrl(environment: TraciveEnvironment): string {
+  return environment.type === 'sandbox'
+    ? `${TRACIVE_SANDBOX_APP_SCHEME}://`
+    : `${TRACIVE_APP_SCHEME}://`;
+}
 export const DEFAULT_INSTALL_URL = 'https://tracive.chottu.link/install';
 
 export interface AuthorizeUrlInput {

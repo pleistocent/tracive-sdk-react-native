@@ -24,6 +24,7 @@ import {
   type PendingAuthorization,
   type PendingAuthorizationStore,
 } from '../PendingAuthorization';
+import { TraciveEnvironment } from '../../model/TraciveEnvironment';
 import { TraciveOAuth } from '../TraciveOAuth';
 
 const CONFIG: OAuthConfiguration = {
@@ -571,7 +572,20 @@ describe('the SDK constants', () => {
   it('matches the sibling SDKs', () => {
     expect(TraciveOAuth.traciveAppScheme).toBe('tracive');
     expect(TraciveOAuth.traciveAndroidPackage).toBe('com.pleistocent.tracive');
-    expect(TraciveOAuth.appPresenceProbeUrl).toBe('tracive://authorize');
     expect(TraciveOAuth.defaultInstallUrl).toBe('https://tracive.chottu.link/install');
+  });
+
+  it('probes the bare scheme, and the sandbox one in sandbox', () => {
+    // This assertion used to read `tracive://authorize`, under a test named
+    // "matches the sibling SDKs" — and no sibling used it. Kotlin checks the package id, Swift
+    // probes the bare scheme. Android resolves a probe by intent-filter matching and the app
+    // registers no custom-scheme host named `authorize`, so the old probe answered
+    // "not installed" on every Android device, including the ones holding the app.
+    expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.production)).toBe('tracive://');
+    expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.sandbox)).toBe('tracivedev://');
+    // A custom base URL is a partner proxy; the app on the device is still the production one.
+    expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.custom('https://p.test/v1'))).toBe(
+      'tracive://',
+    );
   });
 });
