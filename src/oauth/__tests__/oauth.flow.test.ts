@@ -1,6 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
+import {
+  completed,
+  FakeClock,
+  FakeTransport,
+  fixedRandom,
+  jsonResponse,
+} from '../../__tests__/support/fakes';
 import type { Diagnostic } from '../../diagnostics';
 import {
   isTraciveConfigurationError,
@@ -378,8 +384,10 @@ describe('handleCallback()', () => {
         scope: 'checks:read profile:read',
       }),
     );
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(result.type).toBe('authorized');
     if (result.type === 'authorized') {
@@ -406,8 +414,10 @@ describe('handleCallback()', () => {
     });
     await oauth.authorize();
     const state = parseCallbackParameters(opened[0] ?? '').get('state') ?? '';
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+      ),
     );
 
     expect(result.type).toBe('codeReceived');
@@ -417,16 +427,20 @@ describe('handleCallback()', () => {
 
   it('reports a denial', async () => {
     const { oauth, state } = await launched();
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?error=access_denied&state=${encodeURIComponent(state)}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?error=access_denied&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(result.type).toBe('denied');
   });
 
   it('reports a non-denial error without exchanging', async () => {
     const { oauth, transport, state } = await launched();
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?error=server_error&error_description=boom&state=${encodeURIComponent(state)}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?error=server_error&error_description=boom&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(result.type).toBe('failed');
     if (result.type === 'failed') expect(result.error.serverCode).toBe('server_error');
@@ -435,9 +449,61 @@ describe('handleCallback()', () => {
 
   it('fails when no authorization is in progress', async () => {
     const { oauth } = build();
-    const result = await oauth.handleCallback('https://your.app/oauth/callback?code=x&state=y');
+    const result = await completed(
+      oauth.handleCallback('https://your.app/oauth/callback?code=x&state=y'),
+    );
     expect(result.type).toBe('failed');
     if (result.type === 'failed') expect(result.error.kind).toBe('stateMismatch');
+  });
+
+  /**
+   * Hosts are told to route every incoming deep link through here, and most apps have several that
+   * have nothing to do with Tracive. A link that is not this client's redirect is not a failed
+   * sign-in and must not be reported as one.
+   */
+  describe('a URL that is not this client’s redirect', () => {
+    const FOREIGN = [
+      'myapp://payment/done?code=abc&state=xyz',
+      'https://someone.else/oauth/callback?code=abc&state=xyz',
+      'https://your.app/other/path?code=abc&state=xyz',
+    ];
+
+    it.each(FOREIGN)('answers null for %s', async (url) => {
+      const { oauth } = await launched();
+      expect(await oauth.handleCallback(url)).toBeNull();
+    });
+
+    it('leaves the attempt intact, so the genuine redirect still completes', async () => {
+      const { oauth, transport, state } = await launched();
+
+      expect(await oauth.handleCallback('myapp://payment/done?code=attacker-code')).toBeNull();
+      expect(transport.requests).toHaveLength(0);
+
+      transport.enqueue(jsonResponse(200, { access_token: 'at', token_type: 'Bearer' }));
+      const result = await completed(
+        oauth.handleCallback(
+          `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+        ),
+      );
+      expect(result.type).toBe('authorized');
+    });
+
+    /**
+     * Ownership errs towards accepting on purpose: scheme and host are case-insensitive, and a
+     * browser adds a trailing slash where a registration usually does not carry one. Refusing
+     * either would strand a user who really did sign in, and `state` is still what decides whether
+     * the code may be redeemed.
+     */
+    it('still recognises the redirect through a browser’s cosmetic changes', async () => {
+      const { oauth, transport, state } = await launched();
+      transport.enqueue(jsonResponse(200, { access_token: 'at', token_type: 'Bearer' }));
+      const result = await completed(
+        oauth.handleCallback(
+          `HTTPS://YOUR.APP/oauth/callback/?code=abc&state=${encodeURIComponent(state)}`,
+        ),
+      );
+      expect(result.type).toBe('authorized');
+    });
   });
 
   it('fails when the record aged out before the redirect arrived', async () => {
@@ -452,8 +518,10 @@ describe('handleCallback()', () => {
     const state = parseCallbackParameters(opened[0] ?? '').get('state') ?? '';
     clock.advance(61 * 1000);
 
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(result.type).toBe('failed');
     expect(transport.requests).toHaveLength(0);
@@ -473,8 +541,10 @@ describe('signOut()', () => {
     transport.enqueue(
       jsonResponse(200, { access_token: 'at', refresh_token: 'rt', token_type: 'Bearer' }),
     );
-    await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+    await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(await oauth.isAuthorized()).toBe(true);
 

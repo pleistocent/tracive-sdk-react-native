@@ -1,6 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
+import {
+  completed,
+  FakeClock,
+  FakeTransport,
+  fixedRandom,
+  jsonResponse,
+} from '../../__tests__/support/fakes';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
 import { parseCallbackParameters, parseQueryParameters } from '../authorizeUrl';
 import {
@@ -135,7 +141,7 @@ describe('a pending authorization across a process restart', () => {
     const after = session({ pendingStore: new PersistentPendingStore(device), clock });
     after.transport.enqueue(grantResponse());
 
-    const result = await after.oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(after.oauth.handleCallback(redirect('code=abc', state)));
 
     expect(result.type).toBe('authorized');
     expect(await after.oauth.isAuthorized()).toBe(true);
@@ -156,7 +162,7 @@ describe('a pending authorization across a process restart', () => {
 
     const after = session({ pendingStore: new PersistentPendingStore(device), clock });
     after.transport.enqueue(grantResponse());
-    await after.oauth.handleCallback(redirect('code=abc', state));
+    await completed(after.oauth.handleCallback(redirect('code=abc', state)));
 
     const body = parseQueryParameters(after.transport.lastRequest?.body ?? '');
     expect(body.get('code_verifier')).toBe(stored?.codeVerifier);
@@ -173,7 +179,7 @@ describe('a pending authorization across a process restart', () => {
 
     // A new in-memory store, because an in-memory store is exactly as new as the process holding it.
     const after = session({ pendingStore: new InMemoryPendingAuthorizationStore(), clock });
-    const result = await after.oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(after.oauth.handleCallback(redirect('code=abc', state)));
 
     // The user granted consent. There is no way back from here: no verifier, so no exchange.
     expect(result.type).toBe('failed');
@@ -199,7 +205,7 @@ describe('a pending authorization across a process restart', () => {
     const state = stateOf(before.opened[0] ?? '');
 
     const after = session({ clock });
-    const result = await after.oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(after.oauth.handleCallback(redirect('code=abc', state)));
 
     expect(result.type).toBe('failed');
     if (result.type === 'failed') expect(result.error.kind).toBe('stateMismatch');
@@ -258,7 +264,7 @@ describe('a damaged pending record', () => {
     clock.advance(30 * 24 * 3600 * 1000);
 
     transport.enqueue(grantResponse());
-    const result = await oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(oauth.handleCallback(redirect('code=abc', state)));
 
     expect(result.type).toBe('failed');
     // Nothing was exchanged: a month-old attempt must not be able to hide behind a missing field.
@@ -286,7 +292,9 @@ describe('the maximum age of a pending record', () => {
     clock.advance(600 * 1000);
     transport.enqueue(grantResponse());
 
-    expect((await oauth.handleCallback(redirect('code=abc', state))).type).toBe('authorized');
+    expect((await completed(oauth.handleCallback(redirect('code=abc', state)))).type).toBe(
+      'authorized',
+    );
   });
 
   it('refuses a record one second past ten minutes, without spending the code', async () => {
@@ -301,7 +309,7 @@ describe('the maximum age of a pending record', () => {
     const state = stateOf(opened[0] ?? '');
     clock.advance(601 * 1000);
 
-    const result = await oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(oauth.handleCallback(redirect('code=abc', state)));
 
     expect(result.type).toBe('failed');
     if (result.type === 'failed') expect(result.error.kind).toBe('stateMismatch');
@@ -324,7 +332,9 @@ describe('the maximum age of a pending record', () => {
     const state = stateOf(opened[0] ?? '');
     clock.advance(61 * 1000);
 
-    expect((await oauth.handleCallback(redirect('code=abc', state))).type).toBe('failed');
+    expect((await completed(oauth.handleCallback(redirect('code=abc', state)))).type).toBe(
+      'failed',
+    );
   });
 });
 
@@ -350,7 +360,7 @@ describe('cancelPendingAuthorization()', () => {
 
     expect(device.slot).toBeUndefined();
     expect(oauth.pendingAuthorizationId).toBeUndefined();
-    const result = await oauth.handleCallback(redirect('code=abc', state));
+    const result = await completed(oauth.handleCallback(redirect('code=abc', state)));
     expect(result.type).toBe('failed');
     expect(transport.requests).toHaveLength(0);
   });
@@ -440,25 +450,33 @@ describe('a terminal outcome clears the pending record', () => {
   it('clears it after a successful exchange', async () => {
     const { oauth, transport, device, state } = await launched();
     transport.enqueue(grantResponse());
-    expect((await oauth.handleCallback(redirect('code=abc', state))).type).toBe('authorized');
+    expect((await completed(oauth.handleCallback(redirect('code=abc', state)))).type).toBe(
+      'authorized',
+    );
     expect(device.slot).toBeUndefined();
   });
 
   it('clears it after a denial', async () => {
     const { oauth, device, state } = await launched();
-    expect((await oauth.handleCallback(redirect('error=access_denied', state))).type).toBe('denied');
+    expect(
+      (await completed(oauth.handleCallback(redirect('error=access_denied', state)))).type,
+    ).toBe('denied');
     expect(device.slot).toBeUndefined();
   });
 
   it('clears it after a non-denial error on the redirect', async () => {
     const { oauth, device, state } = await launched();
-    expect((await oauth.handleCallback(redirect('error=server_error', state))).type).toBe('failed');
+    expect(
+      (await completed(oauth.handleCallback(redirect('error=server_error', state)))).type,
+    ).toBe('failed');
     expect(device.slot).toBeUndefined();
   });
 
   it('KEEPS it after a state mismatch, so a forgery cannot cancel the attempt', async () => {
     const { oauth, device } = await launched();
-    expect((await oauth.handleCallback(redirect('code=abc', 'not-the-state'))).type).toBe('failed');
+    expect(
+      (await completed(oauth.handleCallback(redirect('code=abc', 'not-the-state')))).type,
+    ).toBe('failed');
     expect(device.slot).toBeDefined();
   });
 
@@ -471,7 +489,9 @@ describe('a terminal outcome clears the pending record', () => {
 
   it('clears it when the code is handed to a confidential client', async () => {
     const { oauth, transport, device, state } = await launched({ confidential: true });
-    expect((await oauth.handleCallback(redirect('code=abc', state))).type).toBe('codeReceived');
+    expect((await completed(oauth.handleCallback(redirect('code=abc', state)))).type).toBe(
+      'codeReceived',
+    );
     // The caller now holds the verifier; the device does not need a second copy of it.
     expect(device.slot).toBeUndefined();
     expect(transport.requests).toHaveLength(0);

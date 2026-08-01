@@ -263,7 +263,8 @@ export class TraciveClient {
     return this.#requireOAuth().authorize();
   }
 
-  handleCallback(url: string): Promise<AuthResult> {
+  /** `null` when the URL is not this client's redirect; see `TraciveOAuth.handleCallback`. */
+  handleCallback(url: string): Promise<AuthResult | null> {
     return this.#requireOAuth().handleCallback(url);
   }
 

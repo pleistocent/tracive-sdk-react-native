@@ -1,6 +1,12 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
+import {
+  completed,
+  FakeClock,
+  FakeTransport,
+  fixedRandom,
+  jsonResponse,
+} from '../../__tests__/support/fakes';
 import { base64UrlEncode } from '../../crypto/base64url';
 import { sha256OfString } from '../../crypto/sha256';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
@@ -103,8 +109,8 @@ describe('state verification during the callback', () => {
   it('rejects a mismatched state and does not exchange anything', async () => {
     const { oauth, transport } = build();
     await oauth.authorize();
-    const result = await oauth.handleCallback(
-      'https://your.app/oauth/callback?state=forged&code=abc',
+    const result = await completed(
+      oauth.handleCallback('https://your.app/oauth/callback?state=forged&code=abc'),
     );
     expect(result.type).toBe('failed');
     if (result.type === 'failed') expect(result.error.kind).toBe('stateMismatch');
@@ -116,8 +122,8 @@ describe('state verification during the callback', () => {
     // denial, and one carrying a code must not be able to make it exchange.
     const { oauth, transport } = build();
     await oauth.authorize();
-    const denied = await oauth.handleCallback(
-      'https://your.app/oauth/callback?error=access_denied&state=forged',
+    const denied = await completed(
+      oauth.handleCallback('https://your.app/oauth/callback?error=access_denied&state=forged'),
     );
     expect(denied.type).toBe('failed');
     if (denied.type === 'failed') expect(denied.error.kind).toBe('stateMismatch');
@@ -142,16 +148,18 @@ describe('state verification during the callback', () => {
     expect(await oauth.authorize()).toBeNull();
     const state = parseCallbackParameters(opened[0] ?? '').get('state') ?? '';
 
-    const forged = await oauth.handleCallback(
-      'https://your.app/oauth/callback?state=forged&code=attacker-code',
+    const forged = await completed(
+      oauth.handleCallback('https://your.app/oauth/callback?state=forged&code=attacker-code'),
     );
     expect(forged.type).toBe('failed');
     if (forged.type === 'failed') expect(forged.error.kind).toBe('stateMismatch');
     expect(transport.requests).toHaveLength(0);
 
     // The genuine redirect still completes, because the attempt survived the forgery.
-    const real = await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=the-code&state=${encodeURIComponent(state)}`,
+    const real = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=the-code&state=${encodeURIComponent(state)}`,
+      ),
     );
     expect(real.type).toBe('authorized');
     expect(parseQueryParameters(transport.lastRequest?.body ?? '').get('code')).toBe('the-code');
@@ -174,8 +182,10 @@ describe('state verification during the callback', () => {
     const state = launched.get('state');
     expect(state).toBeDefined();
 
-    const result = await oauth.handleCallback(
-      `https://your.app/oauth/callback?code=the-code&state=${encodeURIComponent(state ?? '')}`,
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=the-code&state=${encodeURIComponent(state ?? '')}`,
+      ),
     );
     expect(result.type).toBe('authorized');
 

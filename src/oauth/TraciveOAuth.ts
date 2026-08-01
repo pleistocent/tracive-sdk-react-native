@@ -21,6 +21,7 @@ import {
   buildInstallUrl,
   DEFAULT_INSTALL_URL,
   parseCallbackParameters,
+  redirectTarget,
   TRACIVE_APP_SCHEME,
 } from './authorizeUrl';
 import { linkingLinkSource, startLinkListener, type LinkSource } from './linkListener';
@@ -332,7 +333,24 @@ export class TraciveOAuth {
     return null;
   }
 
-  async handleCallback(url: string): Promise<AuthResult> {
+  /**
+   * Completes the authorization the redirect in `url` belongs to, and says how it ended.
+   *
+   * Returns `null` when `url` is not addressed to this client's own redirect URI — "not mine",
+   * which is neither a result nor an error, and nothing was touched. Hosts are encouraged to route
+   * every incoming deep link through here, and most apps have several that have nothing to do with
+   * Tracive; without the check, one of them would land as a `failed` result and be delivered to
+   * `onAuthResult` as if a sign-in had gone wrong. A private-use scheme makes it worse, because any
+   * app on the device may declare one and fire it.
+   *
+   * Ownership is decided on scheme, authority and path — everything a redirect registration fixes —
+   * and deliberately errs towards accepting; see `redirectTarget`. It is not a security boundary
+   * and is not asked to be one. `state` is compared immediately afterwards, and that is what
+   * decides whether a code may be redeemed.
+   */
+  async handleCallback(url: string): Promise<AuthResult | null> {
+    if (redirectTarget(url) !== redirectTarget(this.#config.redirectUri)) return null;
+
     const params = parseCallbackParameters(url);
 
     let pending: PendingAuthorization | undefined;
@@ -516,7 +534,10 @@ export class TraciveOAuth {
     return startLinkListener(this.#linkSource, (url) => {
       void this.handleCallback(url)
         .then((result) => {
-          this.#publish(result);
+          // `null` means the link was not addressed to this client's redirect URI. Publishing it
+          // would tell every subscriber that an authorization ended, for a link that has nothing
+          // to do with Tracive.
+          if (result !== null) this.#publish(result);
         })
         .catch((cause: unknown) => {
           // `handleCallback` is total, so nothing should reach here. It exists anyway because

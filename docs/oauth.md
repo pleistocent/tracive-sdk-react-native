@@ -85,7 +85,12 @@ So instead:
 - `authorize()` resolves to `null` for "launched, the outcome will arrive at `handleCallback`", or
   to `appNotInstalled`, or to `failed`;
 - the terminal outcome is delivered to `onAuthResult` (or returned from `handleCallback` if you
-  route links yourself).
+  route links yourself);
+- `handleCallback` answers `null` for a URL that is not addressed to your `redirectUri`, so routing
+  every incoming deep link through it is safe: your other links are not reported as failed sign-ins,
+  and neither is one fired by another app that declared the same private-use scheme. Ownership is
+  decided on scheme, authority and path, and errs towards accepting — `state` is compared straight
+  afterwards and that is what decides whether a code may be redeemed.
 
 A useful side effect: `launchMode="singleTask"` stops being load-bearing, because a stacked second
 activity instance still finds the pending record.

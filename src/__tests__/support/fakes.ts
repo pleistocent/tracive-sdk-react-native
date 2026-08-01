@@ -2,7 +2,23 @@ import type { HttpRequest, HttpResponse, HttpTransport } from '../../client/Http
 import type { TraciveClock } from '../../client/TraciveClock';
 import type { TraciveRandom } from '../../crypto/random';
 import type { CachedRow, CheckCacheStore } from '../../cache/CheckCacheStore';
+import type { AuthResult } from '../../model/AuthResult';
 import { TraciveError } from '../../model/TraciveError';
+
+/**
+ * Unwraps a `handleCallback` answer, failing loudly when it is `null`.
+ *
+ * `null` means the URL was not addressed to this client's redirect URI, so nothing was attempted.
+ * Every test that goes on to inspect a result is asserting the redirect was recognised as well,
+ * and this is where that assertion lives rather than in each of them.
+ */
+export async function completed(pending: Promise<AuthResult | null>): Promise<AuthResult> {
+  const result = await pending;
+  if (result === null) {
+    throw new Error('handleCallback answered null: the URL was not this client’s redirect.');
+  }
+  return result;
+}
 
 /**
  * No unit test in this repository opens a socket, touches a device or launches a browser. The

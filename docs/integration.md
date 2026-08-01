@@ -115,6 +115,12 @@ That subscribes to warm `url` events **and** drains the cold-start URL, in that 
 duplicate delivery suppressed. If you would rather own the plumbing, call
 `client.handleCallback(url)` yourself for every incoming link.
 
+Handing it every link is safe. `handleCallback` first checks the URL is addressed to your own
+`redirectUri` — scheme, authority and path — and answers `null` for anything else without touching
+the attempt in progress. `null` means "not mine", not an error: your other deep links do not surface
+as failed sign-ins, and neither does a link from another app that declared the same private-use
+scheme.
+
 > **Troubleshooting, and nobody should lose a day to this:** `Linking.getInitialURL()` returns
 > `null` while Remote JS Debugging is active. If cold-start authorization "does not work" only on
 > your machine, turn the debugger off before investigating anything else.

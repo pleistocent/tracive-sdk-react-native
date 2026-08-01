@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { FakeClock, FakeTransport, fixedRandom } from '../../__tests__/support/fakes';
+import { completed, FakeClock, FakeTransport, fixedRandom } from '../../__tests__/support/fakes';
 import type { Diagnostic } from '../../diagnostics';
 import type { AuthResult } from '../../model/AuthResult';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
@@ -178,6 +178,26 @@ describe('cold-start buffering', () => {
     expect(typeof unsubscribe).toBe('function');
     unsubscribe();
   });
+
+  /**
+   * The listener is fed every deep link the app receives, and most apps have links that have
+   * nothing to do with Tracive. Publishing a result for one of those tells every subscriber a
+   * sign-in ended — and a private-use scheme makes it worse, because any app on the device may
+   * declare one and fire it.
+   */
+  it('publishes nothing for a link addressed somewhere else', async () => {
+    const { oauth, source } = build();
+    const received: AuthResult[] = [];
+    oauth.onAuthResult((result) => received.push(result));
+    const stop = oauth.startLinkListener();
+
+    source.emit('myapp://payment/done?code=abc&state=xyz');
+    source.resolveInitial('https://someone.else/oauth/callback?code=abc&state=xyz');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(received).toHaveLength(0);
+    stop();
+  });
 });
 
 /**
@@ -254,7 +274,7 @@ describe('a pending store that rejects', () => {
 
   it('makes handleCallback return a failed result rather than rejecting', async () => {
     const { oauth } = build();
-    const result = await oauth.handleCallback(REDIRECT);
+    const result = await completed(oauth.handleCallback(REDIRECT));
     expect(result.type).toBe('failed');
   });
 

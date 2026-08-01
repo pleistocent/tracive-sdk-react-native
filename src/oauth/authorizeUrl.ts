@@ -47,6 +47,23 @@ export function parseCallbackParameters(url: string): Map<string, string> {
   return parseQueryParameters(splitUrl(url).query);
 }
 
+/**
+ * The part of a URL that a redirect registration fixes: scheme, authority and path, with the query
+ * and the fragment removed.
+ *
+ * Lower-cased whole, and with a trailing slash dropped. Scheme and host are case-insensitive by
+ * RFC 3986 (§3.1 and §3.2.2) while a path is not, so folding the path's case accepts a little more
+ * than it strictly should — and a browser adds a trailing slash to a bare-authority URL where a
+ * registration usually does not carry one. Both leniencies are deliberate and run in the safe
+ * direction: `state` is still compared afterwards and that is what actually decides whether a code
+ * may be redeemed, so being too permissive here costs nothing, while being too strict would drop a
+ * genuine redirect and strand a user who really did sign in.
+ */
+export function redirectTarget(url: string): string {
+  const { base } = splitUrl(url);
+  return base.replace(/\/+$/, '').toLowerCase();
+}
+
 export const TRACIVE_APP_SCHEME = 'tracive';
 export const APP_PRESENCE_PROBE_URL = 'tracive://authorize';
 export const DEFAULT_INSTALL_URL = 'https://tracive.chottu.link/install';
