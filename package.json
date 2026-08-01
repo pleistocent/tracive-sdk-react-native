@@ -53,7 +53,8 @@
     "SECURITY.md",
     "!**/__tests__",
     "!**/__fixtures__",
-    "!**/.*"
+    "!**/.*",
+    "!src/types"
   ],
   "sideEffects": false,
   "engines": {

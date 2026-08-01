@@ -7,8 +7,9 @@
  * declared; an integrator always resolves the real package, because installing it is what makes
  * the subpath usable at all.
  *
- * Nothing here is published: TypeScript does not re-emit a declaration file, so these ambient
- * modules exist only while this repository is being compiled. Shipping them would put a
+ * Nothing here is published. TypeScript does not re-emit a declaration file, and `package.json`
+ * excludes `src/types` from `files` so the directory is not in the tarball either — it used to
+ * be, because `files` lists `src`, which made this comment false. Shipping these would put a
  * competing `declare module` next to the real ones in a consumer's program.
  */
 
