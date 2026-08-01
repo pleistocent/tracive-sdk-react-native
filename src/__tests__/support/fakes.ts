@@ -2,6 +2,7 @@ import type { HttpRequest, HttpResponse, HttpTransport } from '../../client/Http
 import type { TraciveClock } from '../../client/TraciveClock';
 import type { TraciveRandom } from '../../crypto/random';
 import type { CachedRow, CheckCacheStore } from '../../cache/CheckCacheStore';
+import { TraciveError } from '../../model/TraciveError';
 
 /**
  * No unit test in this repository opens a socket, touches a device or launches a browser. The
@@ -60,6 +61,8 @@ export function jsonResponse(
 export class FakeClock implements TraciveClock {
   #nowMs: number;
   readonly sleeps: number[] = [];
+  /** Runs at the moment a sleep begins, so a test can abort mid-backoff. */
+  onSleep: ((seconds: number) => void) | undefined;
 
   constructor(nowMs = 1_700_000_000_000) {
     this.#nowMs = nowMs;
@@ -73,10 +76,18 @@ export class FakeClock implements TraciveClock {
     this.#nowMs += ms;
   }
 
-  /** Records the requested delay and returns immediately: no test should wait in real time. */
-  sleep(seconds: number): Promise<void> {
+  /**
+   * Records the requested delay and returns immediately: no test should wait in real time. The
+   * signal is honoured the same way the system clock honours it, so a test cannot pass here and
+   * fail on device.
+   */
+  sleep(seconds: number, signal?: AbortSignal): Promise<void> {
     this.sleeps.push(seconds);
     this.#nowMs += seconds * 1000;
+    this.onSleep?.(seconds);
+    if (signal?.aborted === true) {
+      return Promise.reject(new TraciveError({ kind: 'network', message: 'aborted' }));
+    }
     return Promise.resolve();
   }
 }

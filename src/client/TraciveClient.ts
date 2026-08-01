@@ -30,7 +30,7 @@ import {
 } from './responseMapper';
 import { backoffSecondsFor, RetryPolicy } from './RetryPolicy';
 import { apiUrl, proxyUrl, TRACIVE_API_PATHS } from './TraciveApi';
-import { systemClock, type TraciveClock } from './TraciveClock';
+import { abortedRequestError, systemClock, type TraciveClock } from './TraciveClock';
 
 export interface TraciveClientOptions {
   readonly mode: TraciveMode;
@@ -343,6 +343,12 @@ export class TraciveClient {
     let refreshed = false;
 
     for (;;) {
+      // Re-read on every pass, not just before the first send. A retry entered after a backoff
+      // would otherwise fire a fresh POST — and therefore spend a credit — for a caller who gave
+      // up seconds ago. The check also covers the refresh-and-resend `continue` below, and it
+      // does not rely on the clock honouring the signal, because a caller may inject their own.
+      if (input.signal?.aborted === true) throw abortedRequestError();
+
       const request: HttpRequest = {
         method: input.method,
         url: this.#urlFor(input.path),
@@ -369,7 +375,7 @@ export class TraciveClient {
             ? cause
             : new TraciveError({ kind: 'network', message: 'The request failed.', cause });
         if (attempt >= maxAttempts) throw error;
-        await this.#backoff(++attempt, undefined);
+        await this.#backoff(++attempt, undefined, input.signal);
         continue;
       }
 
@@ -405,11 +411,15 @@ export class TraciveClient {
 
       const worthRetrying = response.status === 429 || response.status >= 500;
       if (!worthRetrying || attempt >= maxAttempts) throw error;
-      await this.#backoff(++attempt, retryAfterSeconds);
+      await this.#backoff(++attempt, retryAfterSeconds, input.signal);
     }
   }
 
-  async #backoff(nextAttempt: number, retryAfterSeconds: number | undefined): Promise<void> {
+  async #backoff(
+    nextAttempt: number,
+    retryAfterSeconds: number | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
     // Jitter is a scheduling nicety, never a security primitive, so it deliberately does NOT go
     // through the CSPRNG port — a missing WebCrypto polyfill must not break retrying.
     const seconds = backoffSecondsFor(
@@ -418,7 +428,7 @@ export class TraciveClient {
       retryAfterSeconds,
       Math.random(),
     );
-    if (seconds > 0) await this.#clock.sleep(seconds);
+    if (seconds > 0) await this.#clock.sleep(seconds, signal);
   }
 
   #diagnose(diagnostic: Diagnostic): void {

@@ -10,17 +10,25 @@ import { NoOpCheckCache } from '../../cache/CheckCache';
 import { TraciveMode } from '../../model/TraciveMode';
 import { InMemoryTokenStore } from '../../oauth/TokenStore';
 import { TraciveQuery } from '../../query/TraciveQuery';
+import { TraciveError } from '../../model/TraciveError';
 import { backoffSecondsFor, RetryPolicy } from '../RetryPolicy';
+import { systemClock, type TraciveClock } from '../TraciveClock';
 import { TraciveClient } from '../TraciveClient';
 
 const QUERY = TraciveQuery.phone('+6281234567891');
 
-function build(options?: { transport?: FakeTransport; retryPolicy?: RetryPolicy }): {
+function build(options?: {
+  transport?: FakeTransport;
+  retryPolicy?: RetryPolicy;
+  clock?: TraciveClock;
+}): {
   client: TraciveClient;
   transport: FakeTransport;
   clock: FakeClock;
 } {
   const transport = options?.transport ?? new FakeTransport();
+  // Always built, so the handle handed back is a FakeClock and `clock.sleeps` stays readable.
+  // An injected clock replaces it inside the client only.
   const clock = new FakeClock();
   const client = new TraciveClient({
     mode: TraciveMode.oauth({
@@ -28,7 +36,7 @@ function build(options?: { transport?: FakeTransport; retryPolicy?: RetryPolicy 
       redirectUri: 'https://your.app/oauth/callback',
     }),
     transport,
-    clock,
+    clock: options?.clock ?? clock,
     cache: new NoOpCheckCache(),
     tokenStore: new InMemoryTokenStore({
       accessToken: 'live-token',
@@ -200,5 +208,75 @@ describe('the backoff schedule', () => {
 
   it('never sleeps for a negative time', () => {
     expect(backoffSecondsFor(RetryPolicy.default, 2, -10, 0)).toBe(0);
+  });
+});
+
+/**
+ * A check costs a credit, so a request sent after the caller walked away is money spent on an
+ * answer nobody will read. `signal` used to reach `fetch` and nothing else: the retry loop never
+ * re-read it and the backoff sleep had no cancellation path at all.
+ */
+describe('an aborted call', () => {
+  it('does not send a second billable request once the caller has aborted', async () => {
+    const transport = new FakeTransport().always(
+      jsonResponse(503, { code: 'server_error' }, { 'retry-after': '5' }),
+    );
+    const controller = new AbortController();
+    const clock = new FakeClock();
+    // Abort while the backoff is in progress — the window this bug lived in.
+    clock.onSleep = () => {
+      controller.abort();
+    };
+    const { client } = build({ transport, clock });
+
+    await expect(
+      client.checkScammer(QUERY, {
+        source: 'SERVER',
+        idempotencyKey: 'idem-1',
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(TraciveError);
+
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('stops even when the injected clock ignores the signal entirely', async () => {
+    // A caller may supply their own clock, and an older one will not know about the second
+    // parameter. The loop must therefore re-check the signal itself rather than trusting sleep.
+    const deafClock: TraciveClock = {
+      nowMs: () => 1_700_000_000_000,
+      sleep: () => Promise.resolve(),
+    };
+    const transport = new FakeTransport().always(jsonResponse(503, { code: 'server_error' }));
+    const controller = new AbortController();
+    const { client } = build({ transport, clock: deafClock });
+    controller.abort();
+
+    await expect(
+      client.checkScammer(QUERY, {
+        source: 'SERVER',
+        idempotencyKey: 'idem-2',
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(TraciveError);
+
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  it('cuts a long Retry-After sleep short instead of hanging the caller', async () => {
+    // `Retry-After: 3600` is honoured on purpose — clamping it would send the stampede back —
+    // so the only way out of an hour-long wait is the abort signal.
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const sleeping = systemClock.sleep(3600, controller.signal);
+    controller.abort();
+    await expect(sleeping).rejects.toBeInstanceOf(TraciveError);
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+  });
+
+  it('rejects immediately when the signal was already aborted before the sleep began', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(systemClock.sleep(3600, controller.signal)).rejects.toBeInstanceOf(TraciveError);
   });
 });
