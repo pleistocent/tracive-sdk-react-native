@@ -11,6 +11,18 @@
 export const MAX_RECORD_KEY_UTF8_BYTES = 1500;
 
 /**
+ * The server's reserved-key rule, written as the server writes it. `___` is NOT reserved but
+ * `____` is, and — the part worth spelling out — `.` does not match a line terminator without the
+ * `s` flag, so `"__a\nb__"` is NOT reserved either and the server accepts it.
+ *
+ * This was previously implemented as "at least four characters, starts with `__`, ends with `__`",
+ * which is stricter than the server on exactly that class of key: it refused a lookup the API would
+ * have answered. A false rejection is not billable, but it is still an answer the caller never
+ * gets, so mirroring the pattern literally is the only version that cannot diverge.
+ */
+const RESERVED_KEY = /^__.*__$/;
+
+/**
  * JavaScript strings are unvalidated UTF-16 sequences, so unlike the Swift SDK's `String` they
  * can genuinely hold an unpaired surrogate — from a truncated paste, a sliced string or a bad
  * JSON escape. This is one of the two guards that only this SDK can actually reach.
@@ -63,8 +75,8 @@ export function utf8ByteLength(value: string): number {
 }
 
 /**
- * Rejects: the empty string; anything containing `/`; exactly `.`; exactly `..`; anything
- * matching `^__.*__$`; more than {@link MAX_RECORD_KEY_UTF8_BYTES} UTF-8 bytes; and anything
+ * Rejects: the empty string; anything containing `/`; exactly `.`; exactly `..`; anything matching
+ * {@link RESERVED_KEY}; more than {@link MAX_RECORD_KEY_UTF8_BYTES} UTF-8 bytes; and anything
  * holding a lone surrogate.
  *
  * Explicitly allowed, and covered by the fixture: spaces, a `.` inside the string, `@`, `+`,
@@ -74,14 +86,7 @@ export function isValidRecordKey(key: string): boolean {
   if (key === '') return false;
   if (key.indexOf('/') !== -1) return false;
   if (key === '.' || key === '..') return false;
-  // `^__.*__$` — note that `___` is NOT reserved but `____` is.
-  //
-  // Written as a length-and-affix test rather than as that literal regex, and the two differ on
-  // exactly one class of input: `.` does not match `\n` without the `s` flag, so the literal
-  // regex would ACCEPT `"__a\nb__"` where this rejects it. Erring toward a local rejection costs
-  // an annoyed caller, not a billed miss. Deliberately unresolved until the server's own rule can
-  // be read — see docs/OPEN_QUESTIONS.md, item 10.
-  if (key.length >= 4 && key.startsWith('__') && key.endsWith('__')) return false;
+  if (RESERVED_KEY.test(key)) return false;
   if (hasLoneSurrogate(key)) return false;
   if (utf8ByteLength(key) > MAX_RECORD_KEY_UTF8_BYTES) return false;
   return true;

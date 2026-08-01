@@ -56,21 +56,18 @@ describe('shared grammar fixture', () => {
 });
 
 /**
- * Fixture v5 adds three rules that this SDK does not implement yet; each lands in its own commit
- * directly after this one. Rather than skipping those cases — a skipped case reads as coverage —
- * every entry below asserts what this SDK does TODAY, so the gap is visible in the suite.
+ * A fixture bump may land ahead of the rules it adds. When it does, an id listed here asserts what
+ * this SDK does TODAY, so the gap is visible in the suite rather than skipped — a skipped case
+ * reads as coverage. Each entry is deleted by the commit that implements its rule, and an entry
+ * left behind turns red the moment the rule lands, so it cannot outlive the gap it documents.
  *
- * Each entry is deleted by the commit that implements its rule. Leaving one behind turns red the
- * moment the rule lands, so an entry cannot outlive the gap it documents.
- *
- * `null` means "throws nothing at all today".
+ * Both maps are empty: every rule in fixture v5 is implemented. `null` would mean "throws nothing
+ * at all today".
  */
 const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {};
 
 /** Same idea for the record-key guard: the value maps to what the guard returns today. */
-const PENDING_GUARD_CASES: Readonly<Record<string, boolean>> = {
-  '__a\nb__': false,
-};
+const PENDING_GUARD_CASES: Readonly<Record<string, boolean>> = {};
 
 describe('vectors', () => {
   it.each(fixture.vectors.map((vector) => [vector.id, vector] as const))(

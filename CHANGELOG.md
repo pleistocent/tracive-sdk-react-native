@@ -19,6 +19,15 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   `@`-presence test and deliberately not an address grammar: over-validating would refuse addresses
   the server would have matched, which is the worse failure of the two.
 
+- **The record-key guard no longer refuses a key containing a newline.** The reserved-key rule is
+  `^__.*__$`, and `.` does not match a line terminator without the `s` flag, so the server accepts
+  `"__a\nb__"`. The guard implemented that rule as "at least four characters, starts with `__`,
+  ends with `__`", which is stricter than the server: it refused a query the API would have
+  answered. Nothing was billed by this, but a refused lookup is an answer a caller never gets. The
+  guard now mirrors the pattern literally. This was carried as an open question — which side was
+  wrong could not be settled without reading the server's rule — and is now settled by execution
+  and pinned by the shared fixture at v5.
+
 - **The SDK now opens the install link itself.** `authorize()` used to report `appNotInstalled` and
   open nothing, leaving the partner app to call `installUrlForDisplay()` and open the page. The
   Kotlin, Swift and Flutter SDKs all open the link and return the same result, so this was a

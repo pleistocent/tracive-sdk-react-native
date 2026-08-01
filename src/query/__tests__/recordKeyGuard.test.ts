@@ -88,6 +88,41 @@ describe('the reserved pattern', () => {
   });
 });
 
+describe('the reserved pattern does not span a newline', () => {
+  it('accepts a key whose middle holds a newline', () => {
+    // The server's rule is `^__.*__$`, and `.` does not match a newline without the `s` flag, so
+    // the server ACCEPTS this key. Implementing the rule as a starts-with/ends-with test made this
+    // SDK stricter than the server and refused a query the API would have answered. Verified
+    // against the server by execution and carried by the shared fixture.
+    expect(isValidRecordKey('__a\nb__')).toBe(true);
+  });
+
+  it('accepts the other line terminators the pattern does not cross', () => {
+    // A consequence of mirroring the pattern literally rather than an independently verified
+    // server behaviour: `.` excludes CR and the two Unicode line separators as well as LF. Only
+    // the LF case above is fixture-backed.
+    // Written with explicit escapes: the two Unicode line separators are invisible in an editor
+    // and would otherwise be indistinguishable from the plain space in the case below.
+    expect(isValidRecordKey('__a\rb__')).toBe(true);
+    expect(isValidRecordKey('__a\u2028b__')).toBe(true);
+    expect(isValidRecordKey('__a\u2029b__')).toBe(true);
+  });
+
+  it('still rejects a single-line reserved key that happens to contain other whitespace', () => {
+    expect(isValidRecordKey('__a b__')).toBe(false);
+    expect(isValidRecordKey('__a\tb__')).toBe(false);
+  });
+
+  it('anchors at the ends of the whole key, not at a line', () => {
+    // A newline must not let a caller smuggle a reserved key past the guard on its own line, nor
+    // make a harmless key look reserved.
+    expect(isValidRecordKey('x\n__foo__')).toBe(true);
+    expect(isValidRecordKey('__foo__\nx')).toBe(true);
+    // A trailing newline does not end the key: JavaScript's `$` has no trailing-newline exception.
+    expect(isValidRecordKey('__foo__\n')).toBe(true);
+  });
+});
+
 describe('the remaining guard rules', () => {
   it('rejects the empty string, a slash, and the dot keys', () => {
     expect(isValidRecordKey('')).toBe(false);
