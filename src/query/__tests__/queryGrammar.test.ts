@@ -44,12 +44,12 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
 
 describe('shared grammar fixture', () => {
   it('is the version this suite was written against', () => {
-    expect(fixture.version).toBe(2);
+    expect(fixture.version).toBe(3);
   });
 
   it('carries the expected number of vectors and rejections', () => {
     // Pinned so that a fixture update that silently drops a case cannot pass unnoticed.
-    expect(fixture.vectors).toHaveLength(33);
+    expect(fixture.vectors).toHaveLength(34);
     expect(fixture.rejected).toHaveLength(11);
     expect(fixture.documentIdGuard.cases).toHaveLength(8);
   });
@@ -126,7 +126,7 @@ describe('cross-language semantics', () => {
     expect(caseMapping.examples['İ -> lowercase']).toBe('i + U+0307');
   });
 
-  it('applies NFC to e-mail, username, platform and chain ONLY', () => {
+  it('applies NFC to e-mail, username and every code field, but not to ids or addresses', () => {
     const decomposed = 'é'; // 'e' + COMBINING ACUTE ACCENT
     const composed = 'é';
 
@@ -137,6 +137,18 @@ describe('cross-language semantics', () => {
     expect(
       TraciveQuery.username({ platform: 'INSTAGRAM', handle: decomposed }).searchQueryIndex,
     ).toBe(`USERNAME_INSTAGRAM_${composed}`);
+
+    // Applied to the bank code too, and it must compose BEFORE uppercasing. Written with
+    // explicit escapes because the two forms are indistinguishable in an editor: 'A' + U+0301
+    // uppercases to two code points, the precomposed U+00C1 to one, so an implementation that
+    // skips NFC on a bank code builds a key the server can never match.
+    expect(
+      TraciveQuery.bankAccount({
+        countryAlpha3: 'IDN',
+        bankCode: 'BCa\u0301',
+        account: '1',
+      }).searchQueryIndex,
+    ).toBe('BANK_IDN_BC\u00c1_1');
 
     // NOT applied — a bank account id and a crypto address keep their decomposed form.
     expect(

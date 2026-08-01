@@ -8,8 +8,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const FIXTURE = 'test/fixtures/query-grammar-vectors.json';
-const EXPECTED_SHA256 = 'f28b2c18841b6328fe08422f6107f2459418ac0d70a733b26d2dc28130fd3f9d';
-const EXPECTED_BYTES = 19332;
+const EXPECTED_SHA256 = '102d8fd83ae0bcb343e44b691090d2409b6b195b61ae9a911cc0bac96563dd07';
+const EXPECTED_BYTES = 20075;
 
 let bytes;
 try {
