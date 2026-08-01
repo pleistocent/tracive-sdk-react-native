@@ -228,6 +228,17 @@ all, and the browser only appears when the App Link is unverified — a configur
 - Token refresh is **single-flight**, with the latch assigned before any `await`. Two simultaneous
   refreshes with the same rotating refresh token look exactly like token reuse to an authorization
   server, and reuse detection revokes the grant.
+- A refresh token this SDK has already presented is **never presented again.** The latch answers
+  simultaneous callers; this answers the sequential case it cannot see. A refresh that fails with
+  **no response at all** — a timeout, a connection dropped mid-flight — is indistinguishable from a
+  success whose reply was lost, so the server may already have rotated that token and be waiting for
+  its replacement. Sending the stored one again is what reuse detection is for, and the answer to it
+  is the whole grant rather than one call. The token is marked before the request goes out and the
+  next attempt is refused locally with `invalidToken`, without a request. A **complete HTTP
+  response, whatever its status,** releases the mark: a token endpoint answering with an error has
+  issued no tokens (RFC 6749 §5.2), so a 500 costs you a call and not a grant. What this trades away
+  is one consent in the case where the token turned out not to have been spent — cheaper than a
+  revocation in the case where it was.
 - Refresh is **reactive only** — the stored token is sent and the server's 401 is what renews it.
   There is no proactive check against the stored expiry. See below.
 - `grant_revoked` is terminal: stored tokens are cleared and nothing is retried.

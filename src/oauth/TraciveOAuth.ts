@@ -1,5 +1,10 @@
 import { apiUrl, formUrlEncode, TRACIVE_API_PATHS } from '../client/TraciveApi';
-import { FetchHttpTransport, redactedRequest, type HttpTransport } from '../client/HttpTransport';
+import {
+  FetchHttpTransport,
+  redactedRequest,
+  type HttpResponse,
+  type HttpTransport,
+} from '../client/HttpTransport';
 import { systemClock, type TraciveClock } from '../client/TraciveClock';
 import { defaultRandom, type TraciveRandom } from '../crypto/random';
 import { emitDiagnostic, type Diagnostic, type DiagnosticSink } from '../diagnostics';
@@ -49,6 +54,18 @@ import { InMemoryTokenStore, type TokenStore } from './TokenStore';
  * what the code allows, so refusing earlier would throw away attempts the server would still honour.
  */
 const DEFAULT_PENDING_MAX_AGE_SECONDS = 600;
+
+/**
+ * How many spent refresh tokens are remembered, oldest evicted first.
+ *
+ * A short history rather than a single slot, because one slot cannot answer for a token two
+ * rotations back — the Flutter SDK shipped a single slot first and it was wrong for exactly that
+ * reason. Eight is comfortably more rotations than a stored grant can go through between one
+ * caller reading it and that caller reaching the wire, and an under-estimate here is not a
+ * correctness problem: the flight re-reads the store itself, so a token too old to be recognised
+ * has already been replaced in the store and cannot be sent.
+ */
+const SPENT_REFRESH_TOKEN_HISTORY = 8;
 
 /**
  * A blank `installUrl` is REFUSED. It is never treated as absent and never replaced by
@@ -162,6 +179,24 @@ export class TraciveOAuth {
   readonly #listeners = new Set<(result: AuthResult) => void>();
   #bufferedResult: AuthResult | undefined;
   #inFlightRefresh: Promise<TraciveTokens> | null = null;
+
+  /**
+   * The refresh tokens this instance has already handed to the server, oldest first.
+   *
+   * A refresh token is single-use and rotates, and re-presenting one is precisely what a server's
+   * reuse detection looks for: the answer is to revoke the whole grant, not to refuse one call.
+   *
+   * The single-flight latch does not cover this, because the hazard is sequential rather than
+   * concurrent. A refresh that fails with NO response — a socket timeout, a connection dropped
+   * mid-flight — is indistinguishable from a success whose reply was lost, so the server may
+   * already have rotated the token and be waiting to see the new one. The latch is clear by then,
+   * the store still holds the token that was sent, and the next caller would present it again.
+   * This records what has been handed over so that caller can be turned away on the token's
+   * identity rather than on timing.
+   *
+   * Emptied whenever the grant is dropped, so a fresh authorization starts from a clean slate.
+   */
+  readonly #spentRefreshTokens: string[] = [];
 
   /**
    * The id of the authorization THIS instance started and has not yet resolved.
@@ -658,6 +693,12 @@ export class TraciveOAuth {
    * concurrent callers cannot both observe a null latch and both start a refresh. That shape is
    * the whole point: two simultaneous refreshes with the same rotating token look exactly like
    * token reuse to a server, and reuse detection revokes the grant.
+   *
+   * The latch answers the concurrent hazard only. The sequential one — a caller arriving after a
+   * refresh that failed without ever hearing back, holding the same stored token — is answered by
+   * the spent-token history in `#doRefresh`, and it has to be, because by then there is no latch
+   * left to observe. Nothing is checked here: this method reads no store, so the only token it
+   * could judge is one it has not looked up yet.
    */
   refreshTokens(options?: { staleAccessToken?: string }): Promise<TraciveTokens> {
     if (this.#inFlightRefresh !== null) return this.#inFlightRefresh;
@@ -781,11 +822,35 @@ export class TraciveOAuth {
    * The latch goes with it. A caller arriving after this must not join a flight whose write is
    * about to be refused — it would receive the refusal as its own answer, having asked for a
    * refresh that could still have succeeded.
+   *
+   * The spent-token history goes with it too. It is a fact about the grant being dropped here, and
+   * the next authorization issues tokens that have nothing to do with it. Keeping the entries
+   * would only leave a way for a brand-new grant to be refused for a resemblance to a dead one.
+   * The epoch guard above is what protects the flight that is already on the wire: it cannot write
+   * whatever it comes back with, so it does not need its marker kept for it.
    */
   async #discardCredentials(): Promise<void> {
     this.#credentialEpoch += 1;
     this.#inFlightRefresh = null;
+    this.#spentRefreshTokens.length = 0;
     await this.#tokenStore.clear();
+  }
+
+  /**
+   * Records `token` as handed to the server, evicting the oldest entry once the history is full.
+   */
+  #markRefreshTokenSpent(token: string): void {
+    if (this.#spentRefreshTokens.includes(token)) return;
+    this.#spentRefreshTokens.push(token);
+    if (this.#spentRefreshTokens.length > SPENT_REFRESH_TOKEN_HISTORY) {
+      this.#spentRefreshTokens.shift();
+    }
+  }
+
+  /** Takes the marker back off `token`, for the one case that proves it was never consumed. */
+  #releaseRefreshToken(token: string): void {
+    const at = this.#spentRefreshTokens.indexOf(token);
+    if (at >= 0) this.#spentRefreshTokens.splice(at, 1);
   }
 
   /**
@@ -861,14 +926,68 @@ export class TraciveOAuth {
       return current;
     }
 
+    // The store still holds a token this instance has already presented, which means an earlier
+    // refresh went out and never came back with an answer that would have replaced it. Sending it
+    // is the one move that can cost the whole grant rather than one call, so it is refused here,
+    // locally, without a request. See `#spentRefreshTokens`.
+    if (this.#spentRefreshTokens.includes(refreshToken)) {
+      throw new TraciveError({
+        kind: 'invalidToken',
+        message:
+          'The stored refresh token has already been presented to the server, so it cannot be ' +
+          'sent again. Authorize again.',
+      });
+    }
+
     const epoch = this.#credentialEpoch;
-    let tokens: TraciveTokens;
+
+    // Marked BEFORE the request goes out, and what happens to the marker afterwards depends on
+    // which of exactly two failures this turns out to be.
+    //
+    // A complete HTTP response settles the question whatever its status. A token endpoint that
+    // answers with an error has issued no tokens (RFC 6749 section 5.2), so the refresh token was
+    // not consumed and the marker comes back off below — without that, a single 500 would end the
+    // grant permanently.
+    //
+    // No response at all settles nothing. A timeout or a dropped connection is indistinguishable
+    // from a success whose reply was lost, so the server may already have rotated this token and
+    // be waiting to see its replacement. The marker stays and the caller is told to authorize
+    // again. That is the strictly better trade rather than merely the more cautious one: if the
+    // token really was consumed, the grant needs re-authorization regardless, and holding the
+    // marker is what keeps a retry from turning that into a revocation on top of it; if it was
+    // not consumed, the whole cost is one consent the user did not strictly need. Retrying loses
+    // in the first case and only draws in the second.
+    //
+    // A connect-phase or DNS failure would in principle prove the request never arrived, and its
+    // marker could be released. It is deliberately NOT detected: the transport is an injectable
+    // seam, so that error is whatever some other package chose to throw, and pattern-matching it
+    // would make the ambiguous-versus-safe distinction this whole rule turns on depend on a guess.
+    this.#markRefreshTokenSpent(refreshToken);
+
+    let response: HttpResponse;
     try {
-      tokens = await this.#exchange([
+      response = await this.#postTokenRequest([
         ['grant_type', 'refresh_token'],
         ['refresh_token', refreshToken],
         ['client_id', this.#config.clientId],
       ]);
+    } catch (cause) {
+      throw new TraciveError({
+        kind: 'invalidToken',
+        message:
+          'The refresh request failed before any answer arrived, so whether the refresh token ' +
+          'was spent cannot be known. It will not be presented again. Authorize again.',
+        cause,
+      });
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      this.#releaseRefreshToken(refreshToken);
+    }
+
+    let tokens: TraciveTokens;
+    try {
+      tokens = this.#decodeTokenResponse(response);
     } catch (error) {
       // `grant_revoked` is terminal: the grant is gone, so retrying can only produce more of the
       // same. Discard locally so the app asks for authorization instead of looping — and move the
@@ -901,8 +1020,19 @@ export class TraciveOAuth {
   }
 
   async #exchange(fields: readonly (readonly [string, string])[]): Promise<TraciveTokens> {
+    return this.#decodeTokenResponse(await this.#postTokenRequest(fields));
+  }
+
+  /**
+   * The round trip on its own, separated from decoding so that the refresh path can tell "the
+   * server answered, with whatever status" from "nothing came back". Those two are the same
+   * outcome to every other caller and are the entire question for a rotating refresh token; see
+   * `#doRefresh`. `HttpTransport` throws only for a transport-level failure, which is what makes
+   * the distinction readable here at all.
+   */
+  #postTokenRequest(fields: readonly (readonly [string, string])[]): Promise<HttpResponse> {
     // Redacted at the seam: this body carries the PKCE code verifier or the refresh token.
-    const response = await this.#transport.send(
+    return this.#transport.send(
       redactedRequest({
         method: 'POST',
         url: apiUrl(this.#environment, TRACIVE_API_PATHS.token),
@@ -913,7 +1043,9 @@ export class TraciveOAuth {
         body: formUrlEncode(fields),
       }),
     );
+  }
 
+  #decodeTokenResponse(response: HttpResponse): TraciveTokens {
     const body = parseJsonBody(response.body) as TokenResponseBody;
 
     if (response.status < 200 || response.status >= 300) {

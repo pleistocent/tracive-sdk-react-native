@@ -39,6 +39,30 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A refresh token could be presented to the server twice, and re-presenting one costs the whole
+  grant.** The single-flight latch only ever answered simultaneous callers. The hazard it cannot see
+  is sequential: a refresh that fails with no response at all — a socket timeout, a connection
+  dropped mid-flight — is indistinguishable from a success whose reply was lost, so the server may
+  already have rotated that token and be waiting for its replacement. The latch is clear by then and
+  the store still holds the token that went out, so the next caller sent it again. That is precisely
+  the pattern reuse detection exists to catch, and its answer is to revoke the grant rather than
+  refuse one call — the user is signed out.
+
+  A refresh token is now marked before the request leaves, and a marked one is refused locally with
+  `invalidToken` instead of being sent. A complete HTTP response, whatever its status, takes the
+  mark back off: a token endpoint that answers with an error has issued no tokens (RFC 6749 §5.2),
+  so a 500 costs a call and not a grant. Only a failure with no response keeps it, and the caller is
+  told to authorize again. That trade is the better one in both directions — if the token really was
+  spent, the grant needed re-authorization anyway and this avoids a revocation on top of it; if it
+  was not, the cost is one consent nobody strictly needed.
+
+  A short history is kept rather than a single slot, because one slot cannot answer for a token two
+  rotations back. It is emptied on sign-out, so a fresh authorization starts clean. A connect-phase
+  or DNS failure would in principle prove the request never arrived, and is deliberately not
+  detected: the transport is an injectable seam, so that error is whatever some other package chose
+  to throw, and pattern-matching it would rest the ambiguous-versus-safe distinction on a guess.
+  The Flutter SDK has the same guard, and its wording is the reference for this one.
+
 - **A zero server TTL did not withdraw the verdict already on the device.** Both caches returned
   without writing and left any existing row exactly where it was. That honoured the server's
   instruction for the answer in hand and ignored it for the one already stored — the wrong half,

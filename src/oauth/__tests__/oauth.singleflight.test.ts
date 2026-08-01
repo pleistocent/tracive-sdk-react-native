@@ -76,8 +76,12 @@ describe('single-flight refresh', () => {
   });
 
   it('releases the latch after a failure so the next attempt is not wedged', async () => {
+    // The failure here is an HTTP one on purpose. A transport that throws is the other case
+    // entirely — nothing came back, so the stored refresh token may already have been rotated
+    // server-side, and the next attempt is refused rather than sent. See the spent-token suite
+    // below. The latch is released either way; only this failure leaves something to retry with.
     const transport = new FakeTransport().enqueue(
-      new Error('offline'),
+      jsonResponse(500, {}),
       jsonResponse(200, { access_token: 'later', token_type: 'Bearer' }),
     );
     const oauth = new TraciveOAuth({
@@ -128,6 +132,120 @@ describe('single-flight refresh', () => {
       }),
     });
     await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+  });
+});
+
+/**
+ * A refresh that fails with NO response is indistinguishable from a success whose reply was lost:
+ * the server may already have rotated the token and be waiting to see its replacement. Presenting
+ * the stored one again is exactly what reuse detection looks for, and the answer to that is the
+ * whole grant, not one call. The single-flight latch cannot help — the hazard is sequential, and
+ * the latch is clear by the time the second caller arrives.
+ */
+describe('the spent-refresh-token guard', () => {
+  function build(...responses: (HttpResponse | Error)[]): {
+    oauth: TraciveOAuth;
+    transport: FakeTransport;
+  } {
+    const transport = new FakeTransport().enqueue(...responses);
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: 'stale-access',
+        refreshToken: 'the-refresh-token',
+        tokenType: 'Bearer',
+        scopes: ['checks:read'],
+      }),
+    });
+    return { oauth, transport };
+  }
+
+  it('refuses the stored token LOCALLY on the next attempt', async () => {
+    // The discriminating case. A response IS queued behind the failure, so an implementation
+    // without the guard sends the same token again and succeeds; the request count is what says
+    // the second attempt never reached the transport.
+    const { oauth, transport } = build(
+      new Error('socket timed out'),
+      jsonResponse(200, { access_token: 'later', token_type: 'Bearer' }),
+    );
+
+    await expect(oauth.refreshTokens()).rejects.toBeDefined();
+    expect(transport.requests).toHaveLength(1);
+
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('tells the caller to authorize again, without repeating the transport error', async () => {
+    const { oauth } = build(new Error('socket timed out'));
+    const attempt = oauth.refreshTokens();
+    await expect(attempt).rejects.toMatchObject({ kind: 'invalidToken' });
+    await expect(attempt).rejects.toThrow(/before any answer arrived/);
+  });
+
+  it('releases the marker when the server answered, whatever the status', async () => {
+    // A token endpoint that answers with an error has issued no tokens (RFC 6749 section 5.2), so
+    // the refresh token was not consumed. Without this release, one 500 would end the grant.
+    const { oauth, transport } = build(
+      jsonResponse(500, {}),
+      jsonResponse(200, { access_token: 'later', token_type: 'Bearer' }),
+    );
+
+    await expect(oauth.refreshTokens()).rejects.toBeDefined();
+    const recovered = await oauth.refreshTokens();
+
+    expect(recovered.accessToken).toBe('later');
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('remembers more than one rotation back', async () => {
+    // A single slot cannot answer for a token two rotations old. The Flutter SDK shipped one and
+    // had to replace it with a short history, which is what this pins.
+    const { oauth, transport } = build(
+      jsonResponse(200, { access_token: 'a2', refresh_token: 'rt2', token_type: 'Bearer' }),
+      new Error('socket timed out'),
+    );
+
+    await oauth.refreshTokens();
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+
+    // Back to the grant the FIRST rotation replaced. The history still recognises it, so it is
+    // refused locally instead of going out.
+    await oauth.adoptTokens({
+      accessToken: 'stale-access',
+      refreshToken: 'the-refresh-token',
+      tokenType: 'Bearer',
+      scopes: [],
+    });
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('empties the history on sign-out', async () => {
+    // A real authorization issues tokens that have nothing to do with the ones dropped here.
+    // Re-storing the SAME value afterwards is what makes the emptying observable at all: if the
+    // history survived a sign-out, this refresh would be refused instead of sent.
+    const { oauth, transport } = build(
+      new Error('socket timed out'),
+      jsonResponse(200, {}),
+      jsonResponse(200, { access_token: 'after', token_type: 'Bearer' }),
+    );
+
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+    await oauth.signOut();
+
+    await oauth.adoptTokens({
+      accessToken: 'stale-access',
+      refreshToken: 'the-refresh-token',
+      tokenType: 'Bearer',
+      scopes: [],
+    });
+    const refreshed = await oauth.refreshTokens();
+
+    expect(refreshed.accessToken).toBe('after');
+    expect(transport.requests).toHaveLength(3);
   });
 });
 
