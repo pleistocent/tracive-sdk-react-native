@@ -26,6 +26,14 @@ export function abortedRequestError(): TraciveError {
   return new TraciveError({ kind: 'network', message: 'The request was aborted.' });
 }
 
+/**
+ * `setTimeout` coerces its delay to a 32-bit signed integer, so anything over ~24.85 days fires
+ * on the next tick instead — the exact opposite of what a long `Retry-After` asked for, and a hot
+ * retry loop against a server that just asked for a long break. Long waits are therefore served
+ * as a chain of slices no larger than this.
+ */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 export const systemClock: TraciveClock = {
   nowMs(): number {
     return Date.now();
@@ -33,17 +41,31 @@ export const systemClock: TraciveClock = {
   sleep(seconds: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted === true) return Promise.reject(abortedRequestError());
     return new Promise((resolve, reject) => {
+      let remainingMs = Math.max(0, seconds) * 1000;
+      let timer: ReturnType<typeof setTimeout>;
+
       // Named rather than inline so it can be removed on the happy path: a long-lived signal
       // that accumulated one listener per retry would be a leak of its own.
       const onAbort = (): void => {
         clearTimeout(timer);
         reject(abortedRequestError());
       };
-      const timer = setTimeout(() => {
-        signal?.removeEventListener('abort', onAbort);
-        resolve();
-      }, Math.max(0, seconds) * 1000);
+
+      const arm = (): void => {
+        const slice = Math.min(remainingMs, MAX_TIMEOUT_MS);
+        remainingMs -= slice;
+        timer = setTimeout(() => {
+          if (remainingMs > 0) {
+            arm();
+            return;
+          }
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        }, slice);
+      };
+
       signal?.addEventListener('abort', onAbort, { once: true });
+      arm();
     });
   },
 };

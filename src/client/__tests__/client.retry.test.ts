@@ -280,3 +280,35 @@ describe('an aborted call', () => {
     await expect(systemClock.sleep(3600, controller.signal)).rejects.toBeInstanceOf(TraciveError);
   });
 });
+
+/**
+ * `backoffSecondsFor` deliberately does not clamp `Retry-After` — a server asking for a long
+ * break means it, and clamping would send the stampede straight back. `setTimeout` does clamp,
+ * silently and in the opposite direction: any delay over 2147483647 ms is coerced to a 32-bit
+ * signed integer and fires on the NEXT TICK. A month-long break became a hot retry loop.
+ */
+describe('a Retry-After longer than a 32-bit millisecond count', () => {
+  it('does not collapse a 30-day wait into an immediate retry', async () => {
+    const controller = new AbortController();
+    let resolved = false;
+    const sleeping = systemClock.sleep(30 * 86_400, controller.signal).then(
+      () => {
+        resolved = true;
+      },
+      () => undefined,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(resolved).toBe(false);
+
+    // Abort so the pending timer does not hold the test process open for a month.
+    controller.abort();
+    await sleeping;
+  });
+
+  it('still resolves a short wait normally', async () => {
+    const startedAt = Date.now();
+    await systemClock.sleep(0.02);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(15);
+  });
+});
