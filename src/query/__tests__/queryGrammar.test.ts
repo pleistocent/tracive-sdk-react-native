@@ -44,16 +44,37 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
 
 describe('shared grammar fixture', () => {
   it('is the version this suite was written against', () => {
-    expect(fixture.version).toBe(4);
+    expect(fixture.version).toBe(5);
   });
 
   it('carries the expected number of vectors and rejections', () => {
     // Pinned so that a fixture update that silently drops a case cannot pass unnoticed.
     expect(fixture.vectors).toHaveLength(34);
-    expect(fixture.rejected).toHaveLength(11);
-    expect(fixture.documentIdGuard.cases).toHaveLength(8);
+    expect(fixture.rejected).toHaveLength(14);
+    expect(fixture.documentIdGuard.cases).toHaveLength(9);
   });
 });
+
+/**
+ * Fixture v5 adds three rules that this SDK does not implement yet; each lands in its own commit
+ * directly after this one. Rather than skipping those cases — a skipped case reads as coverage —
+ * every entry below asserts what this SDK does TODAY, so the gap is visible in the suite.
+ *
+ * Each entry is deleted by the commit that implements its rule. Leaving one behind turns red the
+ * moment the rule lands, so an entry cannot outlive the gap it documents.
+ *
+ * `null` means "throws nothing at all today".
+ */
+const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {
+  'crypto-empty-address': 'empty_value',
+  'username-empty-platform': 'empty_value',
+  'email-not-an-address': null,
+};
+
+/** Same idea for the record-key guard: the value maps to what the guard returns today. */
+const PENDING_GUARD_CASES: Readonly<Record<string, boolean>> = {
+  '__a\nb__': false,
+};
 
 describe('vectors', () => {
   it.each(fixture.vectors.map((vector) => [vector.id, vector] as const))(
@@ -79,8 +100,15 @@ describe('rejections', () => {
       } catch (error) {
         thrown = error;
       }
+
+      const pending = Object.prototype.hasOwnProperty.call(PENDING_REJECTIONS, vector.id);
+      const expected = pending ? PENDING_REJECTIONS[vector.id] : vector.reason;
+      if (expected === null) {
+        expect(thrown).toBeUndefined();
+        return;
+      }
       expect(thrown).toBeInstanceOf(TraciveQueryError);
-      expect((thrown as TraciveQueryError).reason).toBe(vector.reason);
+      expect((thrown as TraciveQueryError).reason).toBe(expected);
     },
   );
 });
@@ -89,7 +117,8 @@ describe('record-key guard cases', () => {
   it.each(fixture.documentIdGuard.cases.map((entry) => [entry.value, entry.safe] as const))(
     'treats %j as safe=%s',
     (value, safe) => {
-      expect(isValidRecordKey(value)).toBe(safe);
+      const pending = Object.prototype.hasOwnProperty.call(PENDING_GUARD_CASES, value);
+      expect(isValidRecordKey(value)).toBe(pending ? PENDING_GUARD_CASES[value] : safe);
     },
   );
 });
