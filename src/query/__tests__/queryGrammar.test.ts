@@ -61,13 +61,10 @@ describe('shared grammar fixture', () => {
  * reads as coverage. Each entry is deleted by the commit that implements its rule, and an entry
  * left behind turns red the moment the rule lands, so it cannot outlive the gap it documents.
  *
- * Both maps are empty: every rule in fixture v5 is implemented. `null` would mean "throws nothing
+ * It is empty: every rejection rule in fixture v5 is implemented. `null` would mean "throws nothing
  * at all today".
  */
 const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {};
-
-/** Same idea for the record-key guard: the value maps to what the guard returns today. */
-const PENDING_GUARD_CASES: Readonly<Record<string, boolean>> = {};
 
 describe('vectors', () => {
   it.each(fixture.vectors.map((vector) => [vector.id, vector] as const))(
@@ -183,12 +180,20 @@ describe('the empty-field reasons', () => {
   });
 });
 
+/**
+ * Asserted against the fixture's own value, unconditionally. There used to be a map here that could
+ * restate an expected value case by case; it was always empty, so it weakened nothing, and it is
+ * gone because of what it existed to make possible. The fixture is vendored byte-identically into
+ * four SDK repositories and its own header calls itself the anti-drift contract between them, so a
+ * mechanism for disagreeing with a vector while staying green works directly against the thing the
+ * file is for — and no sibling SDK has one. A vector this SDK genuinely cannot satisfy is worth a
+ * red build. That is what the contract is for.
+ */
 describe('record-key guard cases', () => {
   it.each(fixture.documentIdGuard.cases.map((entry) => [entry.value, entry.safe] as const))(
     'treats %j as safe=%s',
     (value, safe) => {
-      const pending = Object.prototype.hasOwnProperty.call(PENDING_GUARD_CASES, value);
-      expect(isValidRecordKey(value)).toBe(pending ? PENDING_GUARD_CASES[value] : safe);
+      expect(isValidRecordKey(value)).toBe(safe);
     },
   );
 });
