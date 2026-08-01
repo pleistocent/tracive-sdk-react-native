@@ -46,6 +46,8 @@ class RecordingPendingStore implements PendingAuthorizationStore {
 function build(options?: {
   installed?: boolean;
   opens?: boolean;
+  /** A launcher that REJECTS rather than resolving false — `Linking.openURL` does exactly that. */
+  throwsOnOpen?: boolean;
   clock?: FakeClock;
   pendingStore?: PendingAuthorizationStore;
   installUrl?: string;
@@ -72,6 +74,7 @@ function build(options?: {
     launcher: {
       openExternally: (url) => {
         opened.push(url);
+        if (options?.throwsOnOpen === true) return Promise.reject(new Error('no handler'));
         return Promise.resolve(options?.opens ?? true);
       },
     },
@@ -132,11 +135,68 @@ describe('authorize()', () => {
     expect(pendingStore.events[pendingStore.events.length - 1]).toBe('clear');
   });
 
-  it('reports appNotInstalled without launching anything', async () => {
-    const { oauth, opened, pendingStore } = build({ installed: false });
+  it('opens the install link itself and reports appNotInstalled', async () => {
+    const { oauth, opened, pendingStore, transport } = build({ installed: false });
+
     expect((await oauth.authorize())?.type).toBe('appNotInstalled');
-    expect(opened).toHaveLength(0);
+
+    // The SDK opens the link rather than leaving that to the partner. All three sibling SDKs do,
+    // and a partner porting an integration between them must not silently get a different flow —
+    // here it would mean the user is never sent anywhere at all.
+    expect(opened).toEqual([
+      'https://tracive.chottu.link/install?ref=partner-app&utm_source=tracive-sdk-react-native',
+    ]);
+    // And no OAuth flow was started: no authorize URL, no pending record, nothing on the wire.
+    expect(opened[0]).not.toContain('tracive://authorize');
     expect(await pendingStore.read()).toBeUndefined();
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  it('still reports appNotInstalled when the OS refuses the install link', async () => {
+    const diagnostics: Diagnostic[] = [];
+    const { oauth, opened, pendingStore } = build({
+      installed: false,
+      opens: false,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    // NOT `failed`. The siblings return app-not-installed whatever the OS did, and it is also the
+    // honest answer: the app really is missing, and the partner shows the same "install Tracive
+    // first" message either way.
+    expect((await oauth.authorize())?.type).toBe('appNotInstalled');
+    expect(opened).toHaveLength(1);
+    expect(await pendingStore.read()).toBeUndefined();
+    // A refused launch is still not allowed to be silent — the user would tap "install" and watch
+    // nothing happen, which is the one outcome nobody can act on.
+    const refused = diagnostics.find((d) => d.code === 'install_link_launch_failed');
+    expect(refused).toBeDefined();
+    expect(refused?.hint).toContain('installUrlForDisplay');
+  });
+
+  it('still reports appNotInstalled when the launcher rejects', async () => {
+    // `Linking.openURL` rejects rather than resolving false, and a host may substitute a launcher
+    // that does the same. A rejection here must not escape a method typed as total.
+    const diagnostics: Diagnostic[] = [];
+    const { oauth } = build({
+      installed: false,
+      throwsOnOpen: true,
+      onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    });
+
+    expect((await oauth.authorize())?.type).toBe('appNotInstalled');
+    expect(diagnostics.map((d) => d.code)).toContain('install_link_launch_failed');
+  });
+
+  it('opens a configured install URL rather than the default', async () => {
+    const { oauth, opened } = build({
+      installed: false,
+      installUrl: 'https://install.example/app?campaign=spring',
+    });
+    await oauth.authorize();
+    expect(opened).toEqual([
+      'https://install.example/app?campaign=spring&ref=partner-app' +
+        '&utm_source=tracive-sdk-react-native',
+    ]);
   });
 
   it('emits the three-cause diagnostic when it finds a stale record', async () => {
@@ -229,6 +289,13 @@ describe('the install URL', () => {
     expect(oauth.installUrlForDisplay()).toBe(
       'https://tracive.chottu.link/install?ref=partner-app&utm_source=tracive-sdk-react-native',
     );
+  });
+
+  it('is the same link authorize() opens, so the two cannot drift apart', async () => {
+    // A partner that renders the link and a user the SDK sends out must land on the same page.
+    const { oauth, opened } = build({ installed: false });
+    await oauth.authorize();
+    expect(opened).toEqual([oauth.installUrlForDisplay()]);
   });
 
   it('does not duplicate attribution when the URL already has some', () => {

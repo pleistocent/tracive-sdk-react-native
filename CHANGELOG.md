@@ -11,6 +11,18 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The SDK now opens the install link itself.** `authorize()` used to report `appNotInstalled` and
+  open nothing, leaving the partner app to call `installUrlForDisplay()` and open the page. The
+  Kotlin, Swift and Flutter SDKs all open the link and return the same result, so this was a
+  contract difference rather than a style one: a partner porting an integration across SDKs got
+  silently different behaviour, and on React Native a user without the Tracive app was simply never
+  sent anywhere. The result is still `appNotInstalled` whatever the OS does with the link — matching
+  the siblings, and honest, because the app really is missing either way — but a refused launch now
+  emits an `install_link_launch_failed` diagnostic rather than passing in silence. The launch goes
+  through the existing `AuthorizeLauncher` seam, so a host that substituted its own launcher owns
+  this launch too. `installUrlForDisplay()` is unchanged and still supported, for a partner who
+  would rather render the link than have the user jump straight out.
+
 - **The install link now points at the page that exists.** The default was
   `https://tracive.chottu.link/app`, a guessed path: every partner's first un-onboarded user would
   have followed a link that silently 404s at the one moment the SDK has nothing else to offer them.

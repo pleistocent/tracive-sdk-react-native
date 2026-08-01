@@ -163,7 +163,8 @@ client.onAuthResult((result) => {
     /* ... */
   }
   if (result.type === 'appNotInstalled') {
-    /* show the install prompt */
+    // The SDK has already opened the install page. Say "install Tracive, then try again" —
+    // there is no deferred resume, so the user comes back here and calls authorize() again.
   }
 });
 

@@ -142,8 +142,15 @@ export class TraciveOAuth {
   }
 
   /**
-   * The install link to open when the Tracive app is absent. Carries attribution only — `ref` (the
-   * partner's OAuth client id) and `utm_source` — and never an OAuth parameter.
+   * The install link for a device without the Tracive app.
+   *
+   * {@link authorize} already OPENS this link itself before reporting `appNotInstalled`, so a
+   * partner does not have to. This accessor stays for the partner who would rather render the
+   * link than have the user jump straight out of the app, and it is what to fall back on if the
+   * OS refuses the launch.
+   *
+   * Carries attribution only — `ref` (the partner's OAuth client id) and `utm_source` — and never
+   * an OAuth parameter.
    */
   installUrlForDisplay(): string {
     return buildInstallUrl(this.#installUrl, this.#config.clientId);
@@ -152,9 +159,13 @@ export class TraciveOAuth {
   /**
    * Returns `null` when the flow was launched successfully: the outcome arrives later at
    * {@link handleCallback}, because an app-to-app hop can outlive this process.
+   *
+   * When the Tracive app is absent, the install page is opened and `appNotInstalled` is returned.
+   * No OAuth flow is started in that case: no PKCE pair, no state, nothing persisted.
    */
   async authorize(): Promise<AuthResult | null> {
     if (!(await this.#presence.isTraciveAppInstalled())) {
+      await this.#launchInstall();
       return { type: 'appNotInstalled' };
     }
 
@@ -487,6 +498,45 @@ export class TraciveOAuth {
     }
     await this.#tokenStore.clear();
     await this.#pendingStore.clear();
+  }
+
+  /**
+   * Opens the install page, and reports a refusal rather than propagating it.
+   *
+   * Routed through the same {@link AuthorizeLauncher} as the authorize URL, not through `Linking`
+   * directly, so a host that substituted its own launcher still owns both launches and a test can
+   * observe this one.
+   *
+   * A refusal is deliberately NOT turned into `failed`. The Kotlin, Swift and Flutter SDKs all
+   * open this link and return app-not-installed regardless of what the OS did, and a partner
+   * porting an integration between them must not meet a different contract here. It is also the
+   * honest answer: the app really is missing, and the partner shows the same "install Tracive
+   * first, then try again" message either way.
+   *
+   * What it must not be is silent — the user would tap "install", nothing would happen, and there
+   * would be nothing to act on. The siblings have no channel for that; this SDK does, so a
+   * refusal goes out as a diagnostic naming `installUrlForDisplay()` as the one remaining move.
+   */
+  async #launchInstall(): Promise<void> {
+    let opened: boolean;
+    try {
+      opened = await this.#launcher.openExternally(this.installUrlForDisplay());
+    } catch {
+      // `Linking.openURL` rejects rather than resolving false, and an injected launcher may do
+      // the same. `authorize()` is typed as total, so a rejection cannot be allowed to escape.
+      opened = false;
+    }
+    if (opened) return;
+    this.#diagnose({
+      code: 'install_link_launch_failed',
+      severity: 'warning',
+      message:
+        'The Tracive app is not installed and the install page could not be opened, so the user ' +
+        'was not sent anywhere.',
+      hint:
+        'The operating system declined to open the install link. Present it yourself with ' +
+        'installUrlForDisplay() so the user still has somewhere to go.',
+    });
   }
 
   /**

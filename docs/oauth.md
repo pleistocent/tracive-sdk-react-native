@@ -14,19 +14,22 @@ your app  <--(2) https://your.app/oauth/callback?code=...&state=...
 ```
 
 ```ts
-// 1. Is the app even there? Presence unknown reports NOT installed — see docs/integration.md.
-if (!(await client.oauth?.isTraciveAppInstalled())) {
-  // Send the user to the install page. It carries attribution only: no OAuth parameter, ever.
+// 1. Launch. Resolves to `null` on success — read on. The presence check is inside: if the
+//    Tracive app is missing, the SDK opens the install page itself and reports `appNotInstalled`
+//    without starting any flow. Presence unknown reports NOT installed — see docs/integration.md.
+const outcome = await client.authorize();
+if (outcome?.type === 'appNotInstalled') {
+  // The install page is already opening. Show your own "install Tracive, then try again".
 }
 
-// 2. Launch. Resolves to `null` on success — read on.
-const outcome = await client.authorize();
-
-// 3. The terminal result arrives here.
+// 2. The terminal result arrives here.
 client.onAuthResult((result) => {
   /* authorized | codeReceived | denied | appNotInstalled | failed */
 });
 ```
+
+`client.oauth?.isTraciveAppInstalled()` is still available if you want to know before you ask, for
+example to label a button — but you do not have to call it to be correct.
 
 ## Why `authorize()` resolves to `null` instead of waiting
 
@@ -101,10 +104,20 @@ JavaScript a single breadcrumb would otherwise print a live authorization code.
 
 ## The install link
 
-When the app is absent, `authorize()` stops before any redirect and reports `appNotInstalled`, and
-`oauth.installUrlForDisplay()` gives you the link to open instead. It is
-`https://tracive.chottu.link/install` — the same base URL in all four Tracive SDKs — carrying
-**attribution only**:
+When the app is absent, `authorize()` starts no OAuth flow — no PKCE pair, no state, nothing
+persisted — **opens the install link itself**, and reports `appNotInstalled`. That matches the
+Kotlin, Swift and Flutter SDKs exactly, so an integration ported between them behaves the same way.
+Show your own "install Tracive, then try again" message on that result; the two are complementary,
+not alternatives.
+
+`oauth.installUrlForDisplay()` returns the very same link, for a partner who would rather render it
+than have the user jump straight out — and as the fallback if the OS refused the launch, which
+arrives as an `install_link_launch_failed` diagnostic. The result stays `appNotInstalled` either
+way, as it does in the siblings: the app really is missing, and that is the outcome the partner has
+to handle regardless.
+
+The link is `https://tracive.chottu.link/install` — the same base URL in all four Tracive SDKs —
+carrying **attribution only**:
 
 | Parameter    | Value                      | Notes                                                                                   |
 | ------------ | -------------------------- | --------------------------------------------------------------------------------------- |
