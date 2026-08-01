@@ -272,6 +272,20 @@ try {
 }
 ```
 
+### Errors, and one that repairs itself
+
+`error.kind` says which case you are in. The two worth handling by name are `insufficientCredits`
+(402 — offer a top-up, do not pre-check with `credits()`) and `invalidToken`, which means no usable
+grant is stored: either nobody has authorized yet, or the stored record has neither an access token
+nor a refresh token left. Nothing reaches the server on that path, so nothing is billed. Send the
+user through `authorize()`.
+
+A record that has lost only its access token is **not** that case. While the refresh token beside it
+is still good, the SDK renews it with a single `POST /oauth/token` and carries on — so you may see
+one unexplained refresh before the call you actually made. That state is reachable from a partial
+write, an interrupted save, or a restored backup, and the alternative would be to send the user back
+through consent to replace a credential that never stopped working.
+
 ### The five identifier types
 
 ```ts
