@@ -11,6 +11,22 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Added
 
+- **`cancelPendingAuthorization(authorizationId?)` and `pendingAuthorizationId`.** No redirect
+  arrives when the user comes back with the system gesture or the screen that started the sign-in
+  is dismissed, and the host app is the only party that can see it — the SDK is never told an
+  app-to-app hop was abandoned. Until now there was no way to say so, and the pending record sat in
+  the store with a live PKCE verifier until the ten-minute expiry reached it.
+
+  Pass the id whenever you can. The signal comes from a screen rather than from the code that
+  called `authorize()`, and it can arrive late: a double tap starts a second attempt, and only then
+  does the first screen's dismissal turn up, at which point an unqualified cancel kills the attempt
+  the user is looking at. The id is memory-only, so a process that did not start the flow reports
+  none and can only cancel unqualified — a cancel means "this process watched the flow end", and a
+  process that opened nothing has no such observation to offer. Cancelling a record an earlier
+  process left still works. The call answers whether anything was actually abandoned.
+
+  The shape matches the Kotlin SDK's, which has had this since the beginning; Swift has its own.
+
 - **`TraciveScopes`, the OAuth scope names as constants**, plus the `TraciveScope` union of the
   same three strings — `scammer.check`, `credits.read` and `profile.read`. Integrators were
   retyping the literals, and a mistyped scope is not a narrower grant: the authorization server
@@ -22,6 +38,87 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   accepts any string, because the server's scope set is larger than the three calls made here.
 
 ### Fixed
+
+- **A zero server TTL did not withdraw the verdict already on the device.** Both caches returned
+  without writing and left any existing row exactly where it was. That honoured the server's
+  instruction for the answer in hand and ignored it for the one already stored — the wrong half,
+  because a zero TTL is the only channel the server has for retracting an answer that has already
+  reached a device. A `HIGH` verdict the server had since corrected kept being served from disk for
+  the rest of its thirty-day TTL, and no request went out that could have learned otherwise. Both
+  caches now delete the row. A negative override arrives as zero, because `CachePolicy` clamps it,
+  and means the same thing. The Kotlin SDK has always deleted.
+
+- **A pending authorization record with a damaged timestamp never expired.** The deserializer
+  checked `state` and `codeVerifier` and passed everything else through, so a record missing
+  `createdAtMs` came back as usable. The age check then computed `(now - undefined) / 1000`, which
+  is `NaN`, and every comparison against `NaN` is false — the ten-minute expiry could not fire at
+  any age. The PKCE verifier stayed on the device indefinitely and a code arriving a month later
+  was still exchanged, with nothing thrown and nothing logged. `redirectUri` was unvalidated on the
+  same path and is sent as `redirect_uri` in the exchange, so it is checked too; a record failing
+  any check is now reported as absent, exactly as unparseable JSON already was.
+
+  Only reachable when you install a persistent pending store — which is the configuration this SDK
+  asks for. The in-memory default never holds a record across the write that damages it.
+
+- **A redirect that was not this client's own was processed anyway.** Hosts are told to route every
+  incoming deep link through `handleCallback`, and most apps have several that have nothing to do
+  with Tracive. Every one of them failed the state comparison and came back as
+  `failed` / `stateMismatch`, which the link listener then published to every subscriber as though
+  a sign-in had gone wrong. A private-use scheme makes it worse, because any app on the device may
+  declare one and fire it.
+
+  `handleCallback` now answers `null` for a URL that is not addressed to your `redirectUri`, having
+  touched nothing — "not mine", neither a result nor an error — and the link listener publishes
+  nothing for it. Ownership is decided on scheme, authority and path, compared case-insensitively
+  and with a trailing slash ignored; both leniencies are deliberate, because `state` is compared
+  immediately afterwards and that is what decides whether a code may be redeemed, while being too
+  strict would drop a genuine redirect and strand a user who really did sign in.
+
+  **The signature widens to `Promise<AuthResult | null>`** on both `TraciveOAuth` and
+  `TraciveClient`. This is the Kotlin SDK's shape, including the null return.
+
+- **Signing out left the check cache full.** `TraciveClient.signOut()` cleared the grant and every
+  cached verdict stayed. A cached result needs no credential to read — `source: 'CACHE'` never
+  touches the network — so the departing user's check history remained on a device now reporting
+  `isAuthorized() === false`, readable by whoever held it next.
+
+  The client does the clearing because the flow cannot: `TraciveOAuth` holds no cache, and a
+  `CheckCache` is injected, so two clients can share one instance. Clearing from here does empty
+  that shared cache for the other client too, and that is chosen on purpose — the cost of dropping
+  the rows is one re-check, the cost of keeping them is a signed-out user's history staying
+  readable, and only one of those is recoverable. A partner driving `TraciveOAuth` directly owns
+  their own cache and must call `clearCache()` themselves.
+
+- **A token round trip in flight could undo a sign-out.** Discarding a credential is instantaneous
+  and acquiring one is not, so a refresh or a code exchange already on the wire when `signOut()`
+  ran still completed — and its write refilled the store the sign-out had just emptied. The device
+  kept a live and freshly _rotated_ refresh token, the newest and longest-lived one there is, while
+  reporting `isAuthorized() === false`. A user who signs out before handing their phone over got
+  exactly the outcome they were trying to avoid, and nothing reported it.
+
+  Every token write that follows a round trip is now conditional on the grant not having been
+  dropped since that round trip began, and the flight fails with `grantRevoked` instead. `signOut()`
+  moves that marker _before_ the revoke call rather than after, so local state is gone even if the
+  revoke hangs, fails, or the process dies during it. Awaiting the in-flight work inside `signOut()`
+  is not the alternative — it would make signing out wait on the network. Swift and Flutter both
+  carry this guard.
+
+- **Every check now carries an `Idempotency-Key`, generated per call when you supply none.** The
+  SDK re-sends the identical POST after a 401 refresh; with no key those two attempts are
+  indistinguishable to the server, so anything billed before or during authorisation is billed
+  twice with no way for you to detect it. The reason for accepting that was "a 401 is rejected
+  before billing" — an assumption about a server that does not exist yet, and the one premise this
+  SDK otherwise refuses to make anywhere.
+
+  A generated key is `sdk-` plus a v4 UUID, so it stays distinguishable from yours in a server-side
+  log, and it is never derived from the query — deriving it would collapse two deliberate re-checks
+  of the same identifier into one answer and one charge. **It buys no retry budget**: retrying is
+  still gated on _your_ key, the only one that survives a process restart. An empty string is now
+  treated as no key, rather than as one that granted a retry budget backed by an unusable header.
+
+  One new requirement: the key is drawn from the SDK's CSPRNG seam, so a runtime with no WebCrypto
+  polyfill and no injected `random` now fails a check with the existing, actionable
+  `csprng_unavailable` error. `TraciveClient` accepts `random` for exactly this.
 
 - **The check request named a field the API does not have.** The body sent
   `searchQueryIndex`; the field is `query`. The API accepts either a structured `input` it
@@ -187,6 +284,21 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   instead of silently dropping them; body sizes are counted in bytes.
 
 ### Changed
+
+- **The Tracive app's Android application id and URL scheme are defined once**, beside the rest of
+  the app's identity in the OAuth layer; the doctor's checks and the Expo config plugin re-export
+  rather than redefine them. The application id used to be written out three times and the scheme
+  twice, which were not copies of a string but copies of an agreement that has to hold with the app
+  on the user's device: the plugin writes the `<queries>` entry, the doctor reads it back, and the
+  flow probes it at runtime. A test now asserts the literal appears in exactly one source file.
+
+- **The retry defaults carry their reasoning.** No value changed — three attempts, a multiplier of
+  two, 500ms initial backoff, 20% jitter, an 8s ceiling, all matching the sibling SDKs — but
+  nothing recorded what any of them was for, which is how the same five numbers drifted apart
+  across the SDKs in the first place. Each is now explained where it is defined, including the one
+  that looks redundant: `maxBackoffSeconds` never binds at these defaults, because three attempts
+  means the longest wait is one second. It is there for a caller who raises `maxAttempts`. The set
+  is also pinned as a whole in a test, so the next change to it has to be deliberate.
 
 - **Token renewal is reactive only: the stored expiry no longer triggers a refresh.**
   `ensureAccessToken()` hands back the stored access token without consulting `expiresAt`, and the
