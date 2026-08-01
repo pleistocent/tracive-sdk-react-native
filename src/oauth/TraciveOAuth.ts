@@ -34,6 +34,16 @@ import { InMemoryTokenStore, type TokenStore } from './TokenStore';
 
 const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 
+/**
+ * How far ahead of the stated expiry a token is treated as already expired.
+ *
+ * A token with a few seconds of life left is sent, rejected, and costs a round trip to learn
+ * what the expiry already said. Device clocks also drift, and an expiry compared exactly against
+ * a drifting clock is a coin toss near the boundary. Thirty seconds is short enough to waste no
+ * meaningful token life and long enough to cover ordinary skew.
+ */
+const EXPIRY_LEEWAY_MS = 30_000;
+
 export interface TraciveOAuthOptions {
   readonly mode: OAuthConfiguration;
   readonly environment?: TraciveEnvironment;
@@ -408,7 +418,7 @@ export class TraciveOAuth {
       });
     }
     const expiresAt = tokens.expiresAt;
-    if (expiresAt !== undefined && expiresAt.getTime() <= this.#clock.nowMs()) {
+    if (expiresAt !== undefined && expiresAt.getTime() - EXPIRY_LEEWAY_MS <= this.#clock.nowMs()) {
       const refreshed = await this.refreshTokens({ staleAccessToken: tokens.accessToken });
       return refreshed.accessToken;
     }

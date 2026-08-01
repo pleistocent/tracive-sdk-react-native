@@ -170,6 +170,29 @@ describe('ensureAccessToken', () => {
     expect(await oauth.ensureAccessToken()).toBe('renewed');
   });
 
+  it('refreshes a token that is about to expire, rather than spending a round trip on it', async () => {
+    // Device clocks drift, and a token with a few seconds of life left is sent, 401s, and costs
+    // a round trip to discover what was already knowable. The 401 path recovers it, but the
+    // leeway is free.
+    const clock = new FakeClock();
+    const transport = new FakeTransport().always(
+      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
+    );
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock,
+      tokenStore: new InMemoryTokenStore({
+        accessToken: 'about-to-expire',
+        refreshToken: 'rt',
+        tokenType: 'Bearer',
+        expiresAt: new Date(clock.nowMs() + 10_000),
+        scopes: [],
+      }),
+    });
+    expect(await oauth.ensureAccessToken()).toBe('renewed');
+  });
+
   it('throws when no grant is stored at all', async () => {
     const oauth = new TraciveOAuth({
       mode: CONFIG,
