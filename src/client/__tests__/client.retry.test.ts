@@ -80,6 +80,80 @@ describe('a check without an idempotency key', () => {
   });
 });
 
+/**
+ * The SDK re-sends the identical POST after a 401 refresh. Without a key on it the two attempts
+ * are indistinguishable to the server, so anything billed before or during authorisation is billed
+ * twice and the caller has no way to detect it. The old reasoning — "a 401 is rejected before
+ * billing" — is an assumption about a server that does not exist yet; generating a key means no
+ * assumption is needed.
+ */
+describe('the key the SDK generates when the caller supplies none', () => {
+  const KEY_SHAPE = /^sdk-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it('is on every check, marked as the SDK’s own', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    expect(transport.lastRequest?.headers['idempotency-key']).toMatch(KEY_SHAPE);
+  });
+
+  it('is carried unchanged into the replay after a 401 refresh', async () => {
+    // The point of the whole exercise: the replay and the original must collapse server-side.
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(401, { code: 'expired_token' }))
+      .enqueue(jsonResponse(200, { access_token: 'fresh', token_type: 'Bearer' }))
+      .enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    const checks = transport.requests.filter((request) => request.url.includes('/scammer-checks'));
+    expect(checks).toHaveLength(2);
+    expect(checks[0]?.headers['idempotency-key']).toMatch(KEY_SHAPE);
+    expect(checks[1]?.headers['idempotency-key']).toBe(checks[0]?.headers['idempotency-key']);
+  });
+
+  it('is different for each deliberate re-check of the same identifier', async () => {
+    // Deriving the key from the query would collapse two checks the caller asked for separately
+    // into one answer and one charge, silently.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    const keys = transport.requests.map((request) => request.headers['idempotency-key']);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it('does not buy a retry budget the caller did not ask for', async () => {
+    // Only the caller's own key does that: it is the only one that survives a process restart and
+    // a new client instance, which is what a retry budget actually needs.
+    const transport = new FakeTransport().always(jsonResponse(503, { code: 'server_error' }));
+    const { client } = build({ transport });
+
+    await expect(client.checkScammer(QUERY, { source: 'SERVER' })).rejects.toMatchObject({
+      kind: 'server',
+    });
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('replaces an empty string, which is not a key', async () => {
+    const transport = new FakeTransport().always(jsonResponse(503, { code: 'server_error' }));
+    const { client } = build({ transport });
+
+    await expect(
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: '' }),
+    ).rejects.toMatchObject({ kind: 'server' });
+
+    // Sent as-is it would have been an unusable header AND a retry budget backed by nothing.
+    expect(transport.lastRequest?.headers['idempotency-key']).toMatch(KEY_SHAPE);
+    expect(transport.requests).toHaveLength(1);
+  });
+});
+
 describe('a check WITH an idempotency key', () => {
   it('retries a 5xx and reuses the same key on every attempt', async () => {
     const transport = new FakeTransport()

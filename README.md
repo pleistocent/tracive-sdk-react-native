@@ -357,6 +357,11 @@ whether the first attempt was already charged, and a blind retry risks a double 
 if you intend to retry; the same key is reused on every attempt, which is what lets the server
 deduplicate. `GET /credits` and `GET /profile` have no side effects and are always retryable.
 
+The request always carries *some* `Idempotency-Key`: when you pass none, the SDK generates a
+per-call one, so that its own replay after a 401 token refresh can be collapsed server-side. That
+does not give you a retry budget — only your own key does — and it is no substitute for a key
+derived from your transaction if you want retries, or deduplication across processes.
+
 ### Do not poll `credits()`
 
 Handle the 402 from `checkScammer` instead. It saves a round trip per transaction, and a balance

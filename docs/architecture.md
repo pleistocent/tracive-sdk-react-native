@@ -297,8 +297,15 @@ which is what lets the server deduplicate. `GET /credits` and `GET /profile` hav
 and are always retryable.
 
 The 401-refresh branch deliberately does **not** consume the retry budget, and can happen at most
-once per request. A 401 is rejected before billing, so re-sending after a refresh cannot
-double-charge.
+once per request.
+
+That replay is why every check carries an `Idempotency-Key` whether you supplied one or not: with
+none, the two attempts are indistinguishable to the server, so anything billed before or during
+authorisation is billed twice and you have no way to detect it. The SDK used to justify sending
+nothing with "a 401 is rejected before billing" — an assumption about a server that does not exist
+yet, and the one premise this SDK otherwise refuses to make anywhere. A generated key (`sdk-` plus
+a v4 UUID, so it is distinguishable from yours in a server-side log) means no assumption is needed.
+It buys no retry budget; only your own key does.
 
 ### Overlapping checks
 

@@ -2,7 +2,7 @@ import { CheckCacheError } from '../cache/CheckCacheError';
 import { CheckCacheKey } from '../cache/CheckCacheKey';
 import { InMemoryCheckCache, type CheckCache } from '../cache/CheckCache';
 import { emitDiagnostic, type Diagnostic, type DiagnosticSink } from '../diagnostics';
-import type { TraciveRandom } from '../crypto/random';
+import { defaultRandom, randomUuid, type TraciveRandom } from '../crypto/random';
 import { CachePolicy } from '../model/CachePolicy';
 import type { CheckResult } from '../model/CheckResult';
 import type { CreditsInfo } from '../model/CreditsInfo';
@@ -60,6 +60,12 @@ export interface CheckScammerOptions {
    * WITHOUT IT THE SDK WILL NOT RETRY a 5xx, a 429 or a timeout, because it cannot tell whether
    * the first attempt was already charged and a blind retry risks a double charge. The same key
    * is reused on every attempt, which is what lets the server deduplicate.
+   *
+   * The request always carries SOME `Idempotency-Key`: when you supply none, the SDK generates a
+   * per-call one so that its own replay after a 401 token refresh can be collapsed server-side.
+   * That does not give you a retry budget — only your own key does — and it is no substitute for
+   * a key derived from your transaction if you want retries or deduplication across processes.
+   * An empty string is treated as no key at all.
    */
   readonly idempotencyKey?: string;
   readonly signal?: AbortSignal;
@@ -91,6 +97,7 @@ export class TraciveClient {
   readonly #mode: TraciveMode;
   readonly #transport: HttpTransport;
   readonly #clock: TraciveClock;
+  readonly #random: TraciveRandom;
   readonly #onDiagnostic: DiagnosticSink | undefined;
   /**
    * Single-flight for checks, keyed on the folded record key plus the detail level and locale.
@@ -110,6 +117,7 @@ export class TraciveClient {
     this.retryPolicy = options.retryPolicy ?? RetryPolicy.default;
     this.#transport = options.transport ?? new FetchHttpTransport();
     this.#clock = options.clock ?? systemClock;
+    this.#random = options.random ?? defaultRandom;
     this.#onDiagnostic = options.onDiagnostic;
     this.cache =
       options.cache ?? new InMemoryCheckCache({ policy: this.cachePolicy, clock: this.#clock });
@@ -421,18 +429,38 @@ export class TraciveClient {
     };
     if (options?.locale !== undefined) body.locale = options.locale;
 
-    const idempotencyKey = options?.idempotencyKey;
+    // An empty string is not a key. Sent as one it would give the caller a retry budget backed by
+    // a header no server can deduplicate on, which is the exact trade the budget exists to refuse.
+    const callerKey =
+      options?.idempotencyKey !== undefined && options.idempotencyKey !== ''
+        ? options.idempotencyKey
+        : undefined;
+
     const { response } = await this.#execute({
       method: 'POST',
       path: TRACIVE_API_PATHS.scammerChecks,
       body: JSON.stringify(body),
       // The one rule that costs real money if it is wrong: a check is retryable only when the
-      // caller supplied an idempotency key. Without one, the first 5xx, 429 or timeout is
-      // surfaced immediately rather than gambling the caller's credit on a guess.
-      retryable: idempotencyKey !== undefined,
-      ...(idempotencyKey !== undefined
-        ? { extraHeaders: { 'idempotency-key': idempotencyKey } }
-        : {}),
+      // CALLER supplied an idempotency key. Without one, the first 5xx, 429 or timeout is
+      // surfaced immediately rather than gambling the caller's credit on a guess. A key the SDK
+      // generated below does not change that and must not: the caller's key is the only thing
+      // that survives a process restart and a new client instance, which is what a retry budget
+      // actually needs.
+      retryable: callerKey !== undefined,
+      // Every check carries an Idempotency-Key, whether the caller supplied one or not.
+      //
+      // The SDK re-sends this exact POST after a 401 refresh (see `#execute`). With no key the
+      // two attempts are indistinguishable to the server, so anything billed before or during
+      // authorisation is billed twice with no way for the caller to detect it. The old reasoning
+      // for allowing that was "a 401 is rejected before billing" — an assumption about a server
+      // that does not exist yet, and the one premise this SDK otherwise refuses to make anywhere.
+      // Generating a key removes the need to assume anything. The prefix keeps an SDK-invented key
+      // distinguishable from a partner's own in a server-side log, which is what a disputed charge
+      // gets reconciled against.
+      //
+      // It is generated per call and never derived from the query: deriving it would collapse two
+      // deliberate re-checks of the same identifier into one answer and one charge, silently.
+      extraHeaders: { 'idempotency-key': callerKey ?? `sdk-${randomUuid(this.#random)}` },
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
 

@@ -4,7 +4,7 @@ import { AesGcmCacheCipher } from '../../cache/CacheCipher';
 import { InMemoryCacheKeyStore } from '../../cache/CacheKeyStore';
 import { TraciveConfigurationError } from '../../model/TraciveConfigurationError';
 import { createPkcePair, createState } from '../../oauth/pkce';
-import { defaultRandom } from '../random';
+import { defaultRandom, randomUuid } from '../random';
 
 const realCrypto = (globalThis as { crypto?: unknown }).crypto;
 
@@ -91,5 +91,39 @@ describe('with a CSPRNG available', () => {
     const a = defaultRandom.randomBytes(32);
     const b = defaultRandom.randomBytes(32);
     expect(Array.from(a).join()).not.toBe(Array.from(b).join());
+  });
+});
+
+describe('randomUuid', () => {
+  it('is a real v4 UUID, version and variant bits included', () => {
+    // Not decoration: a server-side log holding keys from four SDKs is far easier to reason about
+    // when every one of them is the same documented shape.
+    for (let i = 0; i < 50; i++) {
+      expect(randomUuid()).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+    }
+  });
+
+  it('does not repeat', () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 500; i++) seen.add(randomUuid());
+    expect(seen.size).toBe(500);
+  });
+
+  it('draws from the injected source rather than a global', () => {
+    // The escape hatch has to reach here too: `random` is how an app on a runtime with no
+    // WebCrypto keeps working, and a helper that ignored it would defeat that silently.
+    let requested = 0;
+    const first = randomUuid({
+      randomBytes(length: number): Uint8Array {
+        requested = length;
+        return new Uint8Array(length).fill(0xab);
+      },
+    });
+    expect(requested).toBe(16);
+    // The 7th byte's high nibble becomes 4 and the 9th's becomes a: the version and variant bits
+    // are set on the caller's bytes rather than assumed to be already correct.
+    expect(first).toBe('abababab-abab-4bab-abab-abababababab');
   });
 });
