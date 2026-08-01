@@ -46,6 +46,21 @@ const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 const EXPIRY_LEEWAY_MS = 30_000;
 
 /**
+ * How long a pending authorization record stays usable.
+ *
+ * Ten minutes because that is the authorization code's own budget: RFC 6749 section 4.1.2 puts the
+ * recommended maximum lifetime of an authorization code at ten minutes. The verifier in this record
+ * exists for exactly one purpose — redeeming that code — so keeping it past the code's expiry buys
+ * no recovery. The exchange would go out, reach the server, and be refused there for a reason this
+ * SDK cannot improve on, having spent a round trip to learn what the local clock already knew.
+ *
+ * It is not shorter for the mirror reason. Consent happens in another app, and a user who reads the
+ * screen, switches away to check something and comes back has done nothing wrong. Ten minutes is
+ * what the code allows, so refusing earlier would throw away attempts the server would still honour.
+ */
+const DEFAULT_PENDING_MAX_AGE_SECONDS = 600;
+
+/**
  * A blank `installUrl` is REFUSED. It is never treated as absent and never replaced by
  * {@link DEFAULT_INSTALL_URL}.
  *
@@ -88,9 +103,13 @@ export interface TraciveOAuthOptions {
   readonly transport?: HttpTransport;
   readonly tokenStore?: TokenStore;
   /**
-   * Where the pending PKCE record is written before the authorize URL is opened. The default is
-   * in-memory, which gives up the process-death guarantee; the Expo and bare adapters supply one
-   * backed by the platform secure store.
+   * Where the pending PKCE record is written before the authorize URL is opened.
+   *
+   * The default is in-memory, so the record dies with the process — and the process is backgrounded
+   * for the whole of consent, which on Android is when it is most likely to be killed. Supply
+   * `expoSecurePendingAuthorizationStore()` or `keychainPendingAuthorizationStore()` from the
+   * adapter subpaths to get the process-death behaviour this record exists for. See
+   * `PendingAuthorizationStore` for what the default costs.
    */
   readonly pendingStore?: PendingAuthorizationStore;
   readonly launcher?: AuthorizeLauncher;
@@ -106,6 +125,7 @@ export interface TraciveOAuthOptions {
    * constructor. It is not treated as "unset": see `resolveInstallUrl`.
    */
   readonly installUrl?: string;
+  /** Defaults to ten minutes; see `DEFAULT_PENDING_MAX_AGE_SECONDS` for why that number. */
   readonly pendingAuthorizationMaxAgeSeconds?: number;
   readonly onDiagnostic?: DiagnosticSink;
 }
@@ -170,7 +190,8 @@ export class TraciveOAuth {
     this.#clock = options.clock ?? systemClock;
     this.#random = options.random ?? defaultRandom;
     this.#installUrl = resolveInstallUrl(options.installUrl);
-    this.#pendingMaxAgeSeconds = options.pendingAuthorizationMaxAgeSeconds ?? 600;
+    this.#pendingMaxAgeSeconds =
+      options.pendingAuthorizationMaxAgeSeconds ?? DEFAULT_PENDING_MAX_AGE_SECONDS;
   }
 
   /** A stored-grant check, NOT a liveness check: it never touches the network. */

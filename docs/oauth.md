@@ -79,19 +79,91 @@ user would come back to a screen waiting forever on a sign-in that actually succ
 
 So instead:
 
-- the pending record — `{ state, codeVerifier, redirectUri, createdAt }` — is **persisted to secure
-  storage before the authorize URL is opened**;
+- the pending record — `{ state, codeVerifier, redirectUri, createdAt }` — is **written to the
+  `PendingAuthorizationStore` before the authorize URL is opened**, and the launch is abandoned if
+  that write fails, because a flow whose record never reached storage could not have been completed;
 - `authorize()` resolves to `null` for "launched, the outcome will arrive at `handleCallback`", or
   to `appNotInstalled`, or to `failed`;
 - the terminal outcome is delivered to `onAuthResult` (or returned from `handleCallback` if you
   route links yourself).
 
 A useful side effect: `launchMode="singleTask"` stops being load-bearing, because a stacked second
-activity instance still finds the pending record on disk.
+activity instance still finds the pending record.
 
-**Use a persistent `PendingAuthorizationStore`.** The default is in-memory, which is correct for
-tests but gives up exactly the property described above. The Expo and bare adapters provide one
-backed by the platform secure store; the record holds a live PKCE verifier, so it belongs there.
+## The default pending store is not persistent
+
+Writing the record before the launch only survives process death if the store does. The default is
+`InMemoryPendingAuthorizationStore`, and it does not: **out of the box, an authorization interrupted
+by process death cannot be completed.** You have to supply a persistent store to get the property
+the section above describes.
+
+The failure is worth spelling out, because nothing about it is loud. Consent happens in the Tracive
+app, so your process is backgrounded for its whole duration — on Android, exactly when the OS is
+most likely to reclaim it. If that happens the record goes with it, the redirect comes back to a
+fresh process, `handleCallback` finds nothing, and the only thing it can report is:
+
+```
+failed — stateMismatch — "No authorization is in progress, so this redirect cannot be completed."
+```
+
+Nothing throws, nothing is logged and no diagnostic fires, because from the SDK's side that redirect
+is indistinguishable from one that no `authorize()` call preceded. The user granted consent and your
+app has nothing to show for it; the only way forward is to ask them to do it again. The 10-minute
+maximum age is inert in this configuration too — no record ever lives long enough to expire.
+
+Both adapter subpaths ship a store that closes it, backed by the same platform secure storage as the
+tokens. The record holds a live PKCE verifier, so that is where it belongs.
+
+```ts
+import { TraciveClient, TraciveMode, TraciveOAuth, TraciveScopes } from '@tracive/sdk-react-native';
+// Expo — needs expo-secure-store.
+import {
+  expoSecurePendingAuthorizationStore,
+  expoSecureTokenStore,
+} from '@tracive/sdk-react-native/expo';
+// Bare React Native — needs react-native-keychain:
+// import {
+//   keychainPendingAuthorizationStore,
+//   keychainTokenStore,
+// } from '@tracive/sdk-react-native/bare';
+
+const config = {
+  clientId: 'your-client-id',
+  redirectUri: 'https://your.app/oauth/callback',
+  scopes: [TraciveScopes.scammerCheck],
+};
+
+const client = new TraciveClient({
+  mode: TraciveMode.oauth(config),
+  cache,
+  oauth: new TraciveOAuth({
+    mode: config,
+    tokenStore: expoSecureTokenStore(),
+    pendingStore: expoSecurePendingAuthorizationStore(),
+  }),
+});
+```
+
+Two things about that wiring, both easy to get wrong:
+
+- **It goes through `oauth:`, not through a `pendingStore:` option on the client.**
+  `TraciveClientOptions` forwards `tokenStore` but has no `pendingStore` field, so building the
+  `TraciveOAuth` yourself is currently the only way to supply one.
+- **A `TraciveOAuth` you build is used as-is.** The client wires up its own only when you do not
+  pass one, so `environment`, `transport`, `clock`, `random` and `onDiagnostic` are **not** carried
+  across. Set on the client alone, they will not reach authorization — a client pointed at
+  `TraciveEnvironment.sandbox` with a hand-built `TraciveOAuth` still authorizes against production.
+  Pass the same values to both.
+
+`TokenStore` defaults to in-memory for the same reason, with a comparable cost: the grant is lost on
+every app restart and the user re-authorizes. That is why both stores are supplied together above.
+
+Neither default can be made persistent without this package depending on a storage library, and it
+depends on none. `expo-secure-store` and `react-native-keychain` are optional peer dependencies
+reached only through the adapter subpaths, and choosing between them at runtime would defeat static
+analysis, confuse bundlers and turn a missing dependency into a crash report nobody can read. Either
+store can equally be your own implementation of its three-method interface — a `read`, a `write` and
+a `clear` over whatever secure storage you already trust.
 
 ## Why `Linking.openURL` and nothing else
 
@@ -118,7 +190,11 @@ all, and the browser only appears when the App Link is unverified — a configur
   `code` are read — so a forged redirect cannot make the SDK act on its error message or exchange
   its code.
 - A stale pending record (default max age **10 minutes**) is refused and produces the three-cause
-  diagnostic described in [integration.md](integration.md).
+  diagnostic described in [integration.md](integration.md). Ten because that is the authorization
+  code's own budget — RFC 6749 puts the recommended maximum lifetime of a code at ten minutes — and
+  the verifier exists only to redeem that code. Holding it longer buys no recovery: the exchange
+  would reach the server and be refused there anyway, a round trip spent learning what the local
+  clock already knew. `pendingAuthorizationMaxAgeSeconds` moves it if your server disagrees.
 - Token refresh is **single-flight**, with the latch assigned before any `await`. Two simultaneous
   refreshes with the same rotating refresh token look exactly like token reuse to an authorization
   server, and reuse detection revokes the grant.

@@ -19,10 +19,19 @@ export interface PendingAuthorization {
 /**
  * Where the pending record lives.
  *
- * It holds a PKCE verifier, so it belongs in the same secure storage as the tokens — the default
- * below is in-memory, which is correct for tests and for a foreground-only flow but gives up the
- * process-death property the record exists for. The Expo and bare adapters return one backed by
- * the platform secure store.
+ * It holds a PKCE verifier, so it belongs in the same secure storage as the tokens. The Expo and
+ * bare adapters return one backed by the platform secure store; `TraciveOAuth` does not use either
+ * by default, because the core package deliberately depends on no storage library and both of those
+ * live behind optional peer dependencies.
+ *
+ * That default has a cost, and it is stated here rather than left to be discovered: with a
+ * non-persistent store, an authorization interrupted by process death cannot be completed. Consent
+ * happens in the Tracive app, so the host process is backgrounded for its whole duration, which on
+ * Android is exactly when the OS reclaims it. The record dies with the process, the redirect comes
+ * back to a `read()` that returns `undefined`, and `handleCallback` can only report `stateMismatch`
+ * — the user granted consent and the app has nothing to show for it. Nothing throws and nothing is
+ * logged: from the SDK's side it is indistinguishable from a redirect that no `authorize()` call
+ * preceded. Supply a persistent store to close it.
  */
 export interface PendingAuthorizationStore {
   read(): Promise<PendingAuthorization | undefined>;
@@ -30,6 +39,7 @@ export interface PendingAuthorizationStore {
   clear(): Promise<void>;
 }
 
+/** The default. Correct for tests and for a foreground-only flow; wrong for a shipping app. */
 export class InMemoryPendingAuthorizationStore implements PendingAuthorizationStore {
   #pending: PendingAuthorization | undefined;
 

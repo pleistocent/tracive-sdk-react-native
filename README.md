@@ -102,6 +102,47 @@ Neither of these ever throws. A cache that cannot open degrades to a cold cache 
 `cache.lastStoreError` populated, never to a broken SDK. See [docs/caching.md](docs/caching.md),
 including how to bring your own store if you would rather not add a SQL driver at all.
 
+### And pass the two auth stores in. Without them a sign-in can be lost outright.
+
+`TokenStore` and `PendingAuthorizationStore` both default to in-memory, and neither default is right
+for a shipping app:
+
+- **The grant does not outlive the app.** Every restart loses it and the user authorizes again.
+- **An authorization interrupted by process death cannot be completed.** Consent happens in the
+  Tracive app, so your process is backgrounded throughout — on Android, exactly when the OS reclaims
+  it. The pending record holding the PKCE verifier dies with it, and when the redirect comes back
+  `handleCallback` can only answer `failed` / `stateMismatch`, "No authorization is in progress".
+  Nothing throws and no diagnostic fires: that redirect is indistinguishable from one no
+  `authorize()` preceded. The user signed in and you have nothing to show for it.
+
+The secure store you already installed for the cache above is all either one needs:
+
+```ts
+import { TraciveClient, TraciveMode, TraciveOAuth } from '@tracive/sdk-react-native';
+import {
+  expoSecurePendingAuthorizationStore,
+  expoSecureTokenStore,
+} from '@tracive/sdk-react-native/expo';
+
+// `config` is your OAuthConfiguration — clientId, redirectUri and scopes. See "Use it" below.
+const client = new TraciveClient({
+  mode: TraciveMode.oauth(config),
+  cache,
+  oauth: new TraciveOAuth({
+    mode: config,
+    tokenStore: expoSecureTokenStore(),
+    pendingStore: expoSecurePendingAuthorizationStore(),
+  }),
+});
+```
+
+Bare React Native is the same shape with `keychainTokenStore()` and
+`keychainPendingAuthorizationStore()` from `@tracive/sdk-react-native/bare`. Neither store is the
+default because this package depends on no storage library — both adapters sit behind optional peer
+dependencies — and picking one at runtime would turn a missing dependency into a crash report nobody
+can read. [docs/oauth.md](docs/oauth.md) has the full wiring, including what a hand-built
+`TraciveOAuth` does **not** inherit from the client.
+
 ---
 
 ## Configure the host app, then check it

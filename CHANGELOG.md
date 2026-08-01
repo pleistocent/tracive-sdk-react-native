@@ -23,6 +23,46 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The pending authorization record was documented as surviving process death, and by default it
+  does not.** No behaviour changed here. What changed is that the limitation is now stated in every
+  place the guarantee used to be claimed, including the 0.1.0 note above, which says the flow
+  "survives process death" — true with a persistent store, false with the default one.
+
+  `TraciveOAuth` writes the record before opening the authorize URL, and that ordering is right, but
+  it only buys anything if the store outlives the process. The default
+  `InMemoryPendingAuthorizationStore` does not. Consent happens in the Tracive app, so the host
+  process is backgrounded for the whole of it, which on Android is precisely when the OS reclaims
+  it; the PKCE verifier went with it, the redirect returned to a process holding no record, and
+  `handleCallback` reported `stateMismatch` with "No authorization is in progress". A user who had
+  granted consent, an app with nothing to show for it, and no throw, no log and no diagnostic
+  anywhere — because that redirect is indistinguishable from one no `authorize()` call preceded. The
+  10-minute maximum age was inert in the same configuration, since no record ever lived long enough
+  to expire.
+
+  The default stays in-memory, and that is a packaging decision rather than an oversight. This
+  package depends on no storage library: `expo-secure-store` and `react-native-keychain` are
+  optional peer dependencies reached only through the adapter subpaths, and choosing between them at
+  runtime would defeat static analysis, confuse bundlers and turn a missing dependency into a crash
+  report nobody can read. Both subpaths already export a persistent `PendingAuthorizationStore`;
+  what was missing was any statement that you have to pass one. The README, `docs/oauth.md` and
+  diagram B of `docs/architecture.md` now say so and show the wiring, including the two parts that
+  are easy to get wrong — `TraciveClientOptions` has no `pendingStore` field, so the store goes in
+  through a hand-built `TraciveOAuth`, and a hand-built one inherits neither `environment` nor
+  `onDiagnostic` from the client it is passed to. A new suite pins the behaviour rather than the
+  prose: a record surviving a simulated process restart against a persistent store, the same record
+  lost against an in-memory one, the ten-minute boundary from both sides, and every terminal
+  outcome — exchange, denial, redirect error, state mismatch, confidential hand-off and `signOut()`
+  — clearing the record so a live verifier is not left on the device.
+
+- **The ten-minute pending maximum now records why it is ten.** It was a bare `?? 600` with nothing
+  saying what it was chosen against. Ten minutes is the authorization code's own budget — RFC 6749
+  recommends capping a code's lifetime there — and the verifier exists only to redeem that code, so
+  holding it longer buys no recovery: the exchange would go out, reach the server and be refused
+  there, a round trip spent learning what the local clock already knew. Shorter is worse for the
+  mirror reason, since a user who reads a consent screen and switches away briefly has done nothing
+  wrong. It is now a named constant carrying that reasoning, so the next person to tune it can see
+  what they would be trading.
+
 - **`detail: 'full'` used the cache, and was wrong in both directions.** It now neither reads it nor
   writes it. Two independent defects, one rule.
 

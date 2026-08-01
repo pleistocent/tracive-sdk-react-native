@@ -105,7 +105,7 @@ sequenceDiagram
     else Tracive app present
         SDK->>SDK: createPkcePair() and createState()
         SDK->>Store: write state, codeVerifier, redirectUri, createdAtMs
-        Note over SDK,Store: Persisted BEFORE the launch, so the record survives process death
+        Note over SDK,Store: Written BEFORE the launch. It outlives process death only if the store is persistent, and the default store is not
         SDK->>OS: openExternally, tracive://authorize with code_challenge_method=S256
         SDK-->>App: null, the outcome arrives later
         OS->>Tracive: hand off to the Tracive app
@@ -114,8 +114,9 @@ sequenceDiagram
         OS->>SDK: the link reaches startLinkListener, which calls handleCallback(url)
         SDK->>Store: read()
         SDK->>SDK: statesMatch() runs BEFORE error or code is read
-        alt state mismatch, or a record older than 10 minutes
+        alt no record, state mismatch, or a record older than 10 minutes
             SDK-->>App: failed, stateMismatch
+            Note over SDK,Store: A process killed mid-consent with an in-memory store loses the record entirely, and lands here
         else clientType CONFIDENTIAL
             SDK-->>App: codeReceived, carrying code and codeVerifier
             Note over App,Api: Your backend completes the exchange with its client_secret
@@ -144,6 +145,16 @@ Details worth knowing, all from `src/oauth/`:
   configured install URL rather than trusting it.
 - If the launch fails, the pending record is rolled back, so the next attempt does not inherit a
   misleading "stale authorization" diagnostic for a launch that never happened.
+- **The default `PendingAuthorizationStore` is in-memory, so the process-death property above is not
+  what you get out of the box.** The record dies with the process, the redirect lands on the
+  no-record branch, and the user who granted consent is told no authorization is in progress —
+  silently, since that is indistinguishable from a redirect nothing preceded. The core package
+  depends on no storage library, so the persistent stores live behind the adapter subpaths and have
+  to be passed in. [oauth.md](oauth.md) has the wiring and the reasoning.
+- **The 10-minute maximum is the authorization code's own budget**, which RFC 6749 recommends
+  capping at ten minutes. The verifier is only ever used to redeem that code, so holding it longer
+  buys no recovery — the exchange would go out and be refused by the server for the same reason,
+  a round trip later.
 
 ---
 
@@ -189,9 +200,13 @@ leaves the grant alive and immediately re-issuable — and then clears local sta
 the server said, because a sign-out that fails because the network is down is not a sign-out any
 user would accept.
 
-The default `TokenStore` is in-memory, which is correct for tests and wrong for a shipping app. The
-Expo and bare adapters supply one backed by the platform secure store; so does
-`PendingAuthorizationStore`, whose record holds a live PKCE verifier.
+The default `TokenStore` is in-memory, which is correct for tests and wrong for a shipping app: the
+grant is lost on every restart and the user re-authorizes. `PendingAuthorizationStore` defaults the
+same way and costs more, because its record holds a live PKCE verifier and an authorization
+interrupted by process death cannot be completed without it. The Expo and bare adapters supply a
+persistent implementation of both; neither is the default, because the core package depends on no
+storage library and both adapters sit behind optional peer dependencies. Supply them together — see
+[oauth.md](oauth.md).
 
 ---
 
