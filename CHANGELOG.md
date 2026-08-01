@@ -84,6 +84,17 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Changed
 
+- **A blank `installUrl` is refused instead of being quietly defaulted.** The constructor now
+  throws `TraciveConfigurationError` with code `blank_install_url`. Nothing silently substituted the
+  built-in install link before either, but a blank value survived as far as the URL builder, which
+  turned it into `?ref=…&utm_source=…` — neither the default nor the partner's value, and a
+  schemeless string no OS will open. Its only symptom appeared for a user without the Tracive app,
+  after a real `authorize()`, through an optional diagnostic: silent on the one path where the SDK
+  has nothing else to offer. This is a deliberate divergence from the Kotlin SDK, which treats blank
+  as absent; it matches the Flutter SDK, on the grounds that substituting a default for a partner's
+  explicit value is the worse failure. Only blank is refused — a non-blank URL is still used exactly
+  as given.
+
 - **An empty crypto address and an empty username platform now name the field that was empty**:
   `empty_address` and `empty_platform`, replacing the shared `empty_value` both used to throw. Two
   different caller mistakes were indistinguishable, so neither could be turned into a message that

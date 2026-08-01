@@ -2,6 +2,10 @@ import { describe, expect, it } from '@jest/globals';
 
 import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
 import type { Diagnostic } from '../../diagnostics';
+import {
+  isTraciveConfigurationError,
+  TraciveConfigurationError,
+} from '../../model/TraciveConfigurationError';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
 import {
   buildInstallUrl,
@@ -296,6 +300,46 @@ describe('the install URL', () => {
     const { oauth, opened } = build({ installed: false });
     await oauth.authorize();
     expect(opened).toEqual([oauth.installUrlForDisplay()]);
+  });
+
+  /**
+   * A blank override is the one case where falling back to the default is tempting, and it is the
+   * one case where doing so is worst: the partner set the option, so something in their build
+   * produced an empty value, and quietly sending their users to Tracive's own install page hides
+   * that at the exact moment the SDK has nothing else to offer an un-onboarded user.
+   *
+   * The Kotlin SDK treats blank as absent. This SDK follows the Flutter one and refuses, and it
+   * refuses at construction rather than at the launch: the launch happens only for a user without
+   * the Tracive app, only after a real authorize() call, and its one signal is an optional
+   * diagnostic. A throw the first time the object is built cannot be missed by anyone.
+   */
+  it('refuses a blank override rather than silently substituting the default', () => {
+    expect(() => build({ installUrl: '' })).toThrow(TraciveConfigurationError);
+    expect(() => build({ installUrl: '' })).toThrow(/blank/i);
+
+    try {
+      build({ installUrl: '' });
+    } catch (error) {
+      expect(isTraciveConfigurationError(error)).toBe(true);
+      expect((error as TraciveConfigurationError).code).toBe('blank_install_url');
+      // The default must not appear in the remedy: the point is that it is NOT what a blank
+      // value means, and a message offering it invites pasting it back in.
+      expect((error as TraciveConfigurationError).message).not.toContain(DEFAULT_INSTALL_URL);
+    }
+  });
+
+  it('refuses a whitespace-only override for the same reason', () => {
+    // `'  '` is an empty value that survived a trim somewhere, not a URL anyone chose.
+    expect(() => build({ installUrl: '   ' })).toThrow(TraciveConfigurationError);
+  });
+
+  it('still takes the default when the override is simply absent', () => {
+    // The refusal above is about a blank value, not about defaulting. Omitting the option is a
+    // deliberate "use yours" and must keep working.
+    const { oauth } = build({});
+    expect(oauth.installUrlForDisplay()).toBe(
+      'https://tracive.chottu.link/install?ref=partner-app&utm_source=tracive-sdk-react-native',
+    );
   });
 
   it('does not duplicate attribution when the URL already has some', () => {

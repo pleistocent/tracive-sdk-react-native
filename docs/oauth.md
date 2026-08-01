@@ -170,3 +170,23 @@ place for a verifier, a state value or a user identifier.
 There is no deferred resume. Nothing is parked on the link for the user to come back with: they
 install the app, return to your app and retry, and a fresh PKCE pair is generated then — which is
 both simpler and safer than parking a verifier on a public URL.
+
+### A blank `installUrl` is refused, not defaulted
+
+`new TraciveOAuth({ ..., installUrl })` takes your own install page. Pass a **blank** string and the
+constructor throws `TraciveConfigurationError` with code `blank_install_url`. It is not treated as
+"unset", and the built-in link is never substituted for it.
+
+Setting the option at all says the built-in page is not where your users should go, so quietly
+putting it back would override that decision without telling anyone — and a blank value means
+something in your build produced an empty string, which the default would hide rather than fix. This
+is a deliberate divergence from the Kotlin SDK, which folds blank into its default; it matches the
+Flutter SDK, and the reasoning is the same on both: silently substituting a default for an explicit
+value is the worse failure.
+
+The refusal is at construction rather than at the launch, because the launch happens only for a user
+without the Tracive app, only after a real `authorize()` call, and reports only through an optional
+diagnostic — invisible on exactly the path where the SDK has nothing else to offer.
+
+Only blank is refused. A non-blank URL is used exactly as given, wrong ones included: that failure is
+yours and you can see it, which is the whole reason not to paper over it.

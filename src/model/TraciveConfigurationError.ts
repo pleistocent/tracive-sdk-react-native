@@ -12,6 +12,8 @@
  * - `missing_query_declaration` — the Android `<queries>` block is absent.
  * - `missing_ios_query_scheme` — `LSApplicationQueriesSchemes` does not list the app scheme.
  * - `redirect_uri_not_claimed` — no intent-filter / associated domain claims the redirect host.
+ * - `blank_install_url` — the `installUrl` override is blank, which is refused rather than
+ *   quietly replaced with the built-in install link.
  */
 export class TraciveConfigurationError extends Error {
   override readonly name = 'TraciveConfigurationError' as const;

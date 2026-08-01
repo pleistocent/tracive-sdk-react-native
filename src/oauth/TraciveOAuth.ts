@@ -9,6 +9,7 @@ import {
   type AuthResult,
   type TraciveTokens,
 } from '../model/AuthResult';
+import { TraciveConfigurationError } from '../model/TraciveConfigurationError';
 import { TraciveEnvironment } from '../model/TraciveEnvironment';
 import { TraciveError, traciveErrorFrom } from '../model/TraciveError';
 import type { OAuthConfiguration } from '../model/TraciveMode';
@@ -44,6 +45,43 @@ const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
  */
 const EXPIRY_LEEWAY_MS = 30_000;
 
+/**
+ * A blank `installUrl` is REFUSED. It is never treated as absent and never replaced by
+ * {@link DEFAULT_INSTALL_URL}.
+ *
+ * The Kotlin SDK folds blank into its default; the Flutter one deliberately does not, and this SDK
+ * agrees with Flutter. Setting the option at all is a statement that Tracive's own install page is
+ * not where these users should go, so substituting it back in overrides that decision silently —
+ * and a blank value means something in the host app's build produced an empty string, which is a
+ * bug the default would hide rather than fix.
+ *
+ * It is refused HERE, at construction, rather than left to fail at the launch. A blank value used
+ * to survive as far as `buildInstallUrl`, which turned it into `?ref=…&utm_source=…` — neither the
+ * default nor the partner's value, but a schemeless string no OS will open. That only surfaced for
+ * a user without the Tracive app, only after a real `authorize()`, and only as an optional
+ * diagnostic the host may not have subscribed to: silent in every way that matters, on the one
+ * path where the SDK has nothing else to offer. A throw on the first construction is loud, is
+ * immediate, and reaches whoever set the option.
+ *
+ * Only a blank value is refused. A non-blank URL is passed through exactly as given, including one
+ * that turns out to be wrong — that failure is the partner's own and is visible to them, which is
+ * the whole reason not to paper over it.
+ */
+function resolveInstallUrl(configured: string | undefined): string {
+  if (configured === undefined) return DEFAULT_INSTALL_URL;
+  if (configured.trim() === '') {
+    throw new TraciveConfigurationError(
+      'blank_install_url',
+      'installUrl is blank. It is refused rather than replaced with the built-in install link, ' +
+        'because setting the option is a statement that the built-in page is not where these ' +
+        'users should go — substituting it back would override that decision without saying so, ' +
+        'and would hide whatever produced the empty string. Pass the install URL you want, or ' +
+        'omit the option entirely to accept the built-in one.',
+    );
+  }
+  return configured;
+}
+
 export interface TraciveOAuthOptions {
   readonly mode: OAuthConfiguration;
   readonly environment?: TraciveEnvironment;
@@ -60,6 +98,13 @@ export interface TraciveOAuthOptions {
   readonly linkSource?: LinkSource;
   readonly clock?: TraciveClock;
   readonly random?: TraciveRandom;
+  /**
+   * Where a user without the Tracive app is sent. Omit it to accept
+   * {@link TraciveOAuth.defaultInstallUrl}.
+   *
+   * A BLANK value throws {@link TraciveConfigurationError} (`blank_install_url`) from the
+   * constructor. It is not treated as "unset": see `resolveInstallUrl`.
+   */
   readonly installUrl?: string;
   readonly pendingAuthorizationMaxAgeSeconds?: number;
   readonly onDiagnostic?: DiagnosticSink;
@@ -124,7 +169,7 @@ export class TraciveOAuth {
     this.#linkSource = options.linkSource ?? linkingLinkSource;
     this.#clock = options.clock ?? systemClock;
     this.#random = options.random ?? defaultRandom;
-    this.#installUrl = options.installUrl ?? DEFAULT_INSTALL_URL;
+    this.#installUrl = resolveInstallUrl(options.installUrl);
     this.#pendingMaxAgeSeconds = options.pendingAuthorizationMaxAgeSeconds ?? 600;
   }
 
