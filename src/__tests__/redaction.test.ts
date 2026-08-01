@@ -236,6 +236,20 @@ describe('redaction is wired into the shipping code paths', () => {
     expect(String(seen)).not.toContain('live-refresh-token');
   });
 
+  it('reports a body size in bytes, not in UTF-16 code units', async () => {
+    // The one number a redacted request still carries has to be the number the server saw.
+    const body = '{"searchQueryIndex":"EMAIL_budi\u00e9@x.com"}'; // one 2-byte character
+    const seen = redactedRequest({
+      method: 'POST',
+      url: 'https://api.tracive.id/v1/scammer-checks',
+      headers: {},
+      body,
+    });
+    const described = JSON.parse(JSON.stringify(seen)) as { bodyBytes: number };
+    expect(described.bodyBytes).toBe(body.length + 1);
+    expect(String(seen)).toContain(`${body.length + 1} bytes`);
+  });
+
   it('returns a response that redacts itself from the shipping transport', async () => {
     const fetchStub: typeof fetch = () =>
       Promise.resolve(

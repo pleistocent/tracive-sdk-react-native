@@ -1,3 +1,4 @@
+import { utf8Encode } from '../crypto/utf8';
 import { TraciveError } from '../model/TraciveError';
 
 export type HttpMethod = 'GET' | 'POST';
@@ -34,6 +35,16 @@ export interface HttpTransport {
  * a header value and never a body. An `Authorization: Bearer` header printed into a crash report
  * is a live credential.
  */
+/**
+ * The size of a body ON THE WIRE. `String.prototype.length` counts UTF-16 code units, which is
+ * the same number only for ASCII: an e-mail with an accented local part, an Indonesian name, or
+ * a single emoji all report short. A size in a crash report that does not match the size the
+ * server saw is worse than no size at all, because somebody will compare them.
+ */
+function bodyBytesOf(body: string | undefined): number {
+  return body === undefined ? 0 : utf8Encode(body).length;
+}
+
 export function describeRequest(request: HttpRequest): {
   method: HttpMethod;
   url: string;
@@ -44,7 +55,7 @@ export function describeRequest(request: HttpRequest): {
     method: request.method,
     url: request.url,
     headerNames: Object.keys(request.headers),
-    bodyBytes: request.body === undefined ? 0 : request.body.length,
+    bodyBytes: bodyBytesOf(request.body),
   };
 }
 
@@ -57,7 +68,7 @@ export function redactedRequest(request: HttpRequest): HttpRequest {
         value: () =>
           `HttpRequest(${request.method} ${request.url}, headers: ${Object.keys(
             request.headers,
-          ).join(',')}, body: ${request.body === undefined ? 0 : request.body.length} bytes)`,
+          ).join(',')}, body: ${bodyBytesOf(request.body)} bytes)`,
         enumerable: false,
       },
     },
@@ -72,13 +83,13 @@ export function redactedResponse(response: HttpResponse): HttpResponse {
         value: () => ({
           status: response.status,
           headerNames: Object.keys(response.headers),
-          bodyBytes: response.body.length,
+          bodyBytes: bodyBytesOf(response.body),
         }),
         enumerable: false,
       },
       toString: {
         value: () =>
-          `HttpResponse(status: ${response.status}, body: ${response.body.length} bytes)`,
+          `HttpResponse(status: ${response.status}, body: ${bodyBytesOf(response.body)} bytes)`,
         enumerable: false,
       },
     },
