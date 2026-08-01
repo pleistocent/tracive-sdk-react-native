@@ -30,13 +30,37 @@ export function base64UrlEncode(bytes: Uint8Array): string {
   return out;
 }
 
+/** `=` padding and ASCII whitespace are skipped; anything else is an error, not a hint. */
+function isIgnorable(character: string): boolean {
+  return (
+    character === '=' ||
+    character === ' ' ||
+    character === '\n' ||
+    character === '\r' ||
+    character === '\t'
+  );
+}
+
+/**
+ * Throws on any character outside the base64url alphabet.
+ *
+ * It used to skip them. That made standard-base64 input — `+` and `/` where base64url uses `-`
+ * and `_` — decode to silently WRONG bytes instead of failing: the offending characters simply
+ * vanished and the remaining bits shifted. For the one thing this decodes, a cache data key,
+ * wrong bytes mean every existing record fails to open with nothing to point at. The 32-byte
+ * length check downstream catches most of it, and "most" is the problem.
+ */
 export function base64UrlDecode(value: string): Uint8Array {
   const bytes: number[] = [];
   let buffer = 0;
   let bits = 0;
   for (let i = 0; i < value.length; i++) {
-    const index = ALPHABET.indexOf(value.charAt(i));
-    if (index === -1) continue; // tolerate padding or stray whitespace
+    const character = value.charAt(i);
+    const index = ALPHABET.indexOf(character);
+    if (index === -1) {
+      if (isIgnorable(character)) continue;
+      throw new Error(`Not base64url: the input contains ${JSON.stringify(character)}.`);
+    }
     buffer = (buffer << 6) | index;
     bits += 6;
     if (bits >= 8) {

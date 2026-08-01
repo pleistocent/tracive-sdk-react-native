@@ -20,7 +20,18 @@ export function encodeDataKey(dataKey: Uint8Array): string {
 }
 
 export function decodeDataKey(encoded: string): Uint8Array {
-  const bytes = base64UrlDecode(encoded);
+  let bytes: Uint8Array;
+  try {
+    bytes = base64UrlDecode(encoded);
+  } catch (cause) {
+    // A stored key in the wrong alphabet is corrupt in exactly the same sense as one of the
+    // wrong length, and a caller should not have to catch two error families to find that out.
+    throw new CheckCacheError(
+      'dataKeyCorrupt',
+      'The stored cache data key is not base64url. It will be replaced and the cache goes cold.',
+      cause,
+    );
+  }
   if (bytes.length !== DATA_KEY_LENGTH) {
     throw new CheckCacheError(
       'dataKeyCorrupt',

@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
+import { CheckCacheError, isCheckCacheError } from '../../cache/CheckCacheError';
+import { decodeDataKey } from '../../cache/CacheKeyStore';
 import { base64UrlDecode, base64UrlEncode, toHex } from '../base64url';
 import { sha256HexOfString } from '../sha256';
 import { utf8Decode, utf8Encode } from '../utf8';
@@ -91,5 +93,43 @@ describe('SHA-256', () => {
     // non-ASCII identifier, and every such cache key would miss.
     expect(sha256HexOfString('é')).toBe(sha256HexOfString(utf8Decode(utf8Encode('é'))));
     expect(sha256HexOfString('é')).toHaveLength(64);
+  });
+});
+
+/**
+ * The decoder used to `continue` past any character it did not recognise. Standard-base64 input
+ * — `+` and `/` instead of `-` and `_` — therefore decoded to silently WRONG bytes rather than
+ * failing, and a wrong data key means every cached record fails to open with no explanation.
+ * The 32-byte length check in `decodeDataKey` catches most of it, but not all: dropping two
+ * characters from a long enough string still leaves a plausible length.
+ */
+describe('base64url decoding rejects what it cannot decode', () => {
+  it('throws on standard-base64 characters', () => {
+    expect(() => base64UrlDecode('ab+c')).toThrow();
+    expect(() => base64UrlDecode('ab/c')).toThrow();
+  });
+
+  it('throws on any other stray character', () => {
+    expect(() => base64UrlDecode('ab!c')).toThrow();
+    expect(() => base64UrlDecode('abc\u00e9')).toThrow();
+  });
+
+  it('still tolerates padding and ASCII whitespace', () => {
+    const encoded = base64UrlEncode(Uint8Array.from([1, 2, 3, 4, 5]));
+    expect(Array.from(base64UrlDecode(`${encoded}==`))).toEqual([1, 2, 3, 4, 5]);
+    expect(Array.from(base64UrlDecode(` ${encoded}\n`))).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('reports a data key in the wrong alphabet as corrupt, not as a mystery', () => {
+    const encoded = base64UrlEncode(new Uint8Array(32).fill(9));
+    const swapped = `+${encoded.slice(1)}`;
+    let thrown: unknown;
+    try {
+      decodeDataKey(swapped);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isCheckCacheError(thrown)).toBe(true);
+    expect((thrown as CheckCacheError).kind).toBe('dataKeyCorrupt');
   });
 });
