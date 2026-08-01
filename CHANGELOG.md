@@ -43,8 +43,8 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   damaged-grant repair added earlier in this section tested the stored access token for
   _emptiness_, so `''` healed itself and `'  '` did not — and a token of spaces or a stray newline
   reaches the store exactly the same way, through a backend that built the field by concatenation
-  or a value round-tripped through a text column. The rule is now blankness, which is what the
-  Kotlin SDK has always used here.
+  or a value round-tripped through a text column. The rule is now blankness, which is the test the
+  Kotlin and Swift SDKs apply at the same point.
 
   The repair also names the blank token as the stale one when it asks for a refresh. It passed `''`
   before, which was accidentally correct only while the damaged value could only ever be `''`: the
@@ -413,10 +413,10 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   turned it into `?ref=…&utm_source=…` — neither the default nor the partner's value, and a
   schemeless string no OS will open. Its only symptom appeared for a user without the Tracive app,
   after a real `authorize()`, through an optional diagnostic: silent on the one path where the SDK
-  has nothing else to offer. This is a deliberate divergence from the Kotlin SDK, which treats blank
-  as absent; it matches the Flutter SDK, on the grounds that substituting a default for a partner's
-  explicit value is the worse failure. Only blank is refused — a non-blank URL is still used exactly
-  as given.
+  has nothing else to offer. Every Tracive SDK refuses a blank install link under the same
+  `blank_install_url` name, on the grounds that substituting a default for a partner's explicit
+  value is the worse failure. Only blank is refused — a non-blank URL is still used exactly as
+  given.
 
 - **An empty crypto address and an empty username platform now name the field that was empty**:
   `empty_address` and `empty_platform`, replacing the shared `empty_value` both used to throw. Two

@@ -298,7 +298,8 @@ refused. A grant that is missing entirely still throws `invalidToken` and tells 
 **Blank means whitespace as well as empty**, in both directions: a token of spaces or a stray
 newline is repaired the same way `''` is, a refresh token that is only whitespace is refused
 locally rather than presented to the server, and a token response carrying a whitespace access
-token is rejected as malformed instead of being stored. All four Tracive SDKs use the same rule.
+token is rejected as malformed instead of being stored. The Kotlin and Swift SDKs apply the same
+rule at the same points.
 
 ## Public and confidential clients
 
@@ -352,10 +353,9 @@ constructor throws `TraciveConfigurationError` with code `blank_install_url`. It
 
 Setting the option at all says the built-in page is not where your users should go, so quietly
 putting it back would override that decision without telling anyone — and a blank value means
-something in your build produced an empty string, which the default would hide rather than fix. This
-is a deliberate divergence from the Kotlin SDK, which folds blank into its default; it matches the
-Flutter SDK, and the reasoning is the same on both: silently substituting a default for an explicit
-value is the worse failure.
+something in your build produced an empty string, which the default would hide rather than fix.
+Every Tracive SDK refuses it, and they all name the failure `blank_install_url`, so an integration
+ported between them meets the same contract.
 
 The refusal is at construction rather than at the launch, because the launch happens only for a user
 without the Tracive app, only after a real `authorize()` call, and reports only through an optional

@@ -71,11 +71,11 @@ const SPENT_REFRESH_TOKEN_HISTORY = 8;
  * A blank `installUrl` is REFUSED. It is never treated as absent and never replaced by
  * {@link DEFAULT_INSTALL_URL}.
  *
- * The Kotlin SDK folds blank into its default; the Flutter one deliberately does not, and this SDK
- * agrees with Flutter. Setting the option at all is a statement that Tracive's own install page is
- * not where these users should go, so substituting it back in overrides that decision silently —
- * and a blank value means something in the host app's build produced an empty string, which is a
- * bug the default would hide rather than fix.
+ * Every Tracive SDK refuses it, and they all name the failure `blank_install_url`. Setting the
+ * option at all is a statement that Tracive's own install page is not where these users should go,
+ * so substituting it back in overrides that decision silently — and a blank value means something
+ * in the host app's build produced an empty string, which is a bug the default would hide rather
+ * than fix.
  *
  * It is refused HERE, at construction, rather than left to fail at the launch. A blank value used
  * to survive as far as `buildInstallUrl`, which turned it into `?ref=…&utm_source=…` — neither the

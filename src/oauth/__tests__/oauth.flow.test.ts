@@ -314,10 +314,10 @@ describe('the install URL', () => {
    * produced an empty value, and quietly sending their users to Tracive's own install page hides
    * that at the exact moment the SDK has nothing else to offer an un-onboarded user.
    *
-   * The Kotlin SDK treats blank as absent. This SDK follows the Flutter one and refuses, and it
-   * refuses at construction rather than at the launch: the launch happens only for a user without
-   * the Tracive app, only after a real authorize() call, and its one signal is an optional
-   * diagnostic. A throw the first time the object is built cannot be missed by anyone.
+   * Every Tracive SDK refuses it under the same `blank_install_url` name. This one refuses at
+   * construction rather than at the launch: the launch happens only for a user without the Tracive
+   * app, only after a real authorize() call, and its one signal is an optional diagnostic. A throw
+   * the first time the object is built cannot be missed by anyone.
    */
   it('refuses a blank override rather than silently substituting the default', () => {
     expect(() => build({ installUrl: '' })).toThrow(TraciveConfigurationError);
