@@ -50,6 +50,11 @@ A private, environment-specific list may still be supplied in an untracked `.hyg
 file, one token or `/regex/` per line. It is purely additive: it can only catch more, and its
 absence can no longer empty a category.
 
+**What the script does not check: commit messages.** It reads the working tree and never git
+history. A CI checkout is shallow by default, so a history scan would silently cover one commit
+while appearing to cover all of them, and a message that describes one of these rules trips it.
+The rule still applies to commit messages — that part is on the author and the reviewer.
+
 ### One deliberate exception inside the code
 
 The shared fixture defines a rejection reason spelled `invalid_document_id`, and that exact string

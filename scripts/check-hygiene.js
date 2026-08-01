@@ -7,6 +7,16 @@
 // product, an internal collection path, or non-English roadmap phase jargon. Say "the Tracive
 // API", "the server", "record key", "phase 1 / phase 2".
 //
+// WHAT THIS SCRIPT ACTUALLY CHECKS: the working tree only. Every text file is scanned, including
+// extension-less ones such as LICENSE and dotfiles such as .gitignore — it used to skip both,
+// because it keyed on a known-extension list.
+//
+// COMMIT MESSAGES ARE NOT SCANNED, and the rule still covers them. Git history is not read here
+// at all. Two reasons it stays that way: a CI checkout is shallow by default, so a history scan
+// would silently cover one commit while appearing to cover all of them; and a message that
+// DESCRIBES one of these rules trips it, exactly as this file would if it did not exempt itself.
+// Commit messages are a review responsibility — see CONTRIBUTING.md.
+//
 // A note on how this script is written, because it is not obvious: it checks CATEGORIES and
 // SHAPES rather than embedding the literal internal names. Writing those names into a public
 // repository's tooling would leak exactly what the rule exists to protect — the denylist would
@@ -35,13 +45,22 @@ const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const TERMS_PATH = join(SCRIPT_DIRECTORY, 'hygiene-terms.txt');
 const SELF_TEST_PATH = join(SCRIPT_DIRECTORY, 'hygiene-selftest.txt');
 const SELF = 'scripts/check-hygiene.js';
-// The two files whose whole purpose is to contain forbidden-looking text.
+// Files whose whole purpose is to contain forbidden-looking text. `.hygiene-forbidden` is the
+// private list: it is untracked, it holds the real internal names, and scanning it would report
+// every one of them as a violation of itself.
 const SCANNER_OWN_FILES = new Set([
   'scripts/hygiene-terms.txt',
   'scripts/hygiene-selftest.txt',
+  '.hygiene-forbidden',
 ]);
 
+/** Anything larger, or holding a NUL in its first block, is treated as binary and skipped. */
+const MAX_SCANNED_BYTES = 2_000_000;
+
 const SKIP_DIRECTORIES = new Set(['node_modules', '.git', 'lib', 'coverage', 'android', 'ios']);
+// Extensions scanned without sniffing. A file with no extension, or a dotfile, is sniffed
+// instead — see `looksLikeText` — because LICENSE, .gitignore and .npmrc are all plain text that
+// this script used to walk straight past.
 const TEXT_EXTENSIONS = new Set([
   '.ts',
   '.tsx',
@@ -66,6 +85,9 @@ const TEXT_EXTENSIONS = new Set([
 // appear nowhere in shipping code and whose only effect here would be to disclose that they
 // exist. The repository path carries an optional `.git`, which package.json's clone URL has.
 const ALLOWED_PLEISTOCENT_PATTERNS = [
+  // The copyright holder in a licence header. Legitimate, and the reason widening this scan to
+  // extension-less files surfaced LICENSE on the first run.
+  /Copyright \d{4} Pleistocent(?![A-Za-z0-9._-])/g,
   /com\.pleistocent\.tracive(?![A-Za-z0-9._-])/g,
   /github\.com\/pleistocent\/tracive-sdk-react-native(\.git)?(?![A-Za-z0-9._-])/g,
   /pleistocent\/tracive-sdk-react-native(?![A-Za-z0-9._-])/g,
@@ -179,6 +201,21 @@ function proveEveryRuleCanFire(rules) {
   }
 }
 
+function looksLikeText(path, stats) {
+  if (stats.size > MAX_SCANNED_BYTES) return false;
+  let contents;
+  try {
+    contents = readFileSync(path);
+  } catch {
+    return false;
+  }
+  const limit = Math.min(contents.length, 4096);
+  for (let i = 0; i < limit; i++) {
+    if (contents[i] === 0) return false;
+  }
+  return true;
+}
+
 function walk(directory, files = []) {
   for (const entry of readdirSync(directory)) {
     if (SKIP_DIRECTORIES.has(entry)) continue;
@@ -193,7 +230,9 @@ function walk(directory, files = []) {
       walk(path, files);
     } else {
       const dot = entry.lastIndexOf('.');
-      if (dot !== -1 && TEXT_EXTENSIONS.has(entry.slice(dot))) files.push(path);
+      // `dot <= 0` covers both `LICENSE` (no dot) and `.gitignore` (dot at index 0).
+      const known = dot > 0 && TEXT_EXTENSIONS.has(entry.slice(dot));
+      if (known || (dot <= 0 && looksLikeText(path, stats))) files.push(path);
     }
   }
   return files;

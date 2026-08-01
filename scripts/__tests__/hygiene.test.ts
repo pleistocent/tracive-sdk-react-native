@@ -99,6 +99,24 @@ describe('the public-hygiene check', () => {
     expect(status).toBe(1);
   });
 
+  it('scans extension-less files and dotfiles, not only known extensions', () => {
+    // LICENSE, .gitignore and .npmrc are all plain text that the walker used to skip, because it
+    // keyed on an extension allowlist.
+    expect(runInTemporaryTree({ LICENSE: probeFor('backend source path') }).status).toBe(1);
+    expect(runInTemporaryTree({ '.npmrc': probeFor('backend source path') }).status).toBe(1);
+  });
+
+  it('skips a binary file rather than choking on it', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tracive-hygiene-'));
+    try {
+      writeFileSync(join(directory, 'blob'), Buffer.from([0, 1, 2, 0, 255]));
+      const result = spawnSync(process.execPath, [SCRIPT], { cwd: directory, encoding: 'utf8' });
+      expect(result.status).toBe(0);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('still fails on the built-in shape rules', () => {
     const { status } = runInTemporaryTree({ 'notes.md': probeFor('backend_commit_sha') });
     expect(status).toBe(1);
