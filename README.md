@@ -136,6 +136,36 @@ The full manual setup is in [docs/integration.md](docs/integration.md).
 
 ---
 
+## How it works
+
+You build a `TraciveQuery`, which folds your user's identifier into the exact key the server indexes
+and throws if it cannot produce one. `TraciveClient` then answers from the `CheckCache` when it can,
+and goes to the network when it cannot. Authorization is a separate concern owned by `TraciveOAuth`:
+it hands the user to the Tracive app already installed on their device and receives an OAuth code
+back through your own App Link. In phase 2 the same client can instead be pointed at your own
+backend, and your backend holds the credentials.
+
+```mermaid
+flowchart LR
+  App["Your app"] --> Query["TraciveQuery"]
+  Query --> Client["TraciveClient"]
+  App --> Client
+  Client --> Cache["CheckCache"]
+  Client --> OAuth["TraciveOAuth"]
+  Client --> Transport["HttpTransport"]
+  OAuth -.->|"tracive://authorize"| TApp["Tracive app on the device"]
+  Transport -->|"oauth mode"| Api["Tracive API"]
+  Transport -->|"proxy mode"| Gateway["Your own backend"]
+  Gateway --> Api
+```
+
+**[docs/architecture.md](docs/architecture.md)** has the full diagram set: the PKCE authorization
+round trip, the token refresh latch, the check request path with its retry loop and caching rules,
+how each identifier type is folded, and the redaction layer that keeps credentials out of anything
+this SDK serialises.
+
+---
+
 ## Use it
 
 ```ts
@@ -278,6 +308,7 @@ over but that you must be able to see in your own telemetry.
 
 ## Documentation
 
+- [docs/architecture.md](docs/architecture.md) — diagrams of the whole SDK, end to end
 - [docs/integration.md](docs/integration.md) — host app configuration, platform by platform
 - [docs/oauth.md](docs/oauth.md) — the authorization flow and why it is shaped this way
 - [docs/caching.md](docs/caching.md) — TTLs, encryption, and bringing your own store

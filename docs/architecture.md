@@ -1,0 +1,444 @@
+# Architecture
+
+Diagrams for a developer who has never seen this SDK. Every arrow here is derived from the source
+in `src/`; where a behaviour is a documented risk rather than a settled fact, it is marked and
+linked to [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+
+Two facts frame everything below, and both are load-bearing rather than decorative:
+
+- **The Tracive API is not live yet.** Endpoint paths, request fields and response fields are the
+  agreed shape of a contract, not an observed one. See item 9 of
+  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- **Every check is billed, including one that finds nothing.** That is why the query builders reject
+  locally, why the cache exists, why overlapping checks are collapsed, and why a check is never
+  retried without an idempotency key.
+
+The same five diagrams appear in the Tracive SDKs for Kotlin Multiplatform, Flutter and Swift. The
+concepts line up; the type and method names are this package's own.
+
+---
+
+## A. Where the SDK sits
+
+The package is pure TypeScript and ships no native code. Everything that touches the outside world
+— the network, the clock, randomness, storage, the OS link surface — is an interface you can
+replace, which is why the whole SDK is testable without a socket, a device or a browser.
+
+There are two modes. In `TraciveMode.oauth` the SDK holds a user's own grant and calls the Tracive
+API directly. In `TraciveMode.proxy` your backend holds the credentials and the SDK calls your
+gateway instead; `client.oauth` is then `undefined` and the authorization methods throw. Proxy mode
+is phase 2 and is not available yet — it exists in the surface now so that enabling it later is not
+a breaking change. See [proxy-contract.md](proxy-contract.md).
+
+```mermaid
+flowchart TD
+  subgraph Host["Your React Native or Expo app"]
+    Code["Your code"]
+    Redirect["Your App Link / Universal Link host"]
+  end
+
+  subgraph SDK["@tracive/sdk-react-native"]
+    Query["TraciveQuery"]
+    Client["TraciveClient"]
+    OAuth["TraciveOAuth"]
+    Cache["CheckCache"]
+    Tokens["TokenStore"]
+    Pending["PendingAuthorizationStore"]
+    Transport["HttpTransport"]
+  end
+
+  TraciveApp["Tracive app on the same device"]
+  Api["Tracive API"]
+  Gateway["Your own backend gateway"]
+
+  Code --> Query
+  Query --> Client
+  Code --> Client
+  Client --> Cache
+  Client --> OAuth
+  Client --> Transport
+  OAuth --> Tokens
+  OAuth --> Pending
+  OAuth --> Transport
+  OAuth -.->|"opens tracive://authorize"| TraciveApp
+  TraciveApp -.->|"redirects with code and state"| Redirect
+  Redirect -->|"startLinkListener"| OAuth
+  Transport -->|"oauth mode"| Api
+  Transport -->|"proxy mode"| Gateway
+  Gateway --> Api
+```
+
+The replaceable ports, in full: `HttpTransport`, `TraciveClock`, `TraciveRandom`, `TokenStore`,
+`PendingAuthorizationStore`, `CheckCache`, `CheckCacheStore`, `CacheKeyStore`, `CacheCipher`,
+`AppPresenceProbe` and `AuthorizeLauncher`.
+
+---
+
+## B. Authorization: OAuth 2.0 with PKCE (S256)
+
+There is no API key and no password prompt. Consent happens **in the Tracive app already installed
+on the device**, and the two hops are ordinary OS link launches through `AuthorizeLauncher` (which
+defaults to `Linking.openURL`). No WebView, no in-app browser tab and no web-authentication session
+appears anywhere in this flow — an in-app browser exists to *keep* a URL inside itself, and this
+flow needs the OS to *route away* to a claiming app. See [oauth.md](oauth.md) for the full
+rationale, and item 6 of [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for why that rationale is inherited
+doctrine rather than a measurement.
+
+`authorize()` resolves to `null` when the flow was merely launched. The terminal outcome arrives
+later at `onAuthResult`, because on Android the OS killing your process while another app is in the
+foreground is routine, and a promise that waited for the redirect would simply never resolve.
+
+```mermaid
+sequenceDiagram
+    participant App as Your app
+    participant SDK as TraciveOAuth
+    participant Store as PendingAuthorizationStore
+    participant OS as Operating system
+    participant Tracive as Tracive app
+    participant Api as Tracive API
+
+    App->>SDK: authorize()
+    SDK->>OS: AppPresenceProbe, canOpenURL tracive://authorize
+    alt Tracive app absent, or presence unknown
+        SDK->>OS: openExternally(installUrlForDisplay())
+        SDK-->>App: appNotInstalled
+    else Tracive app present
+        SDK->>SDK: createPkcePair() and createState()
+        SDK->>Store: write state, codeVerifier, redirectUri, createdAtMs
+        Note over SDK,Store: Persisted BEFORE the launch, so the record survives process death
+        SDK->>OS: openExternally, tracive://authorize with code_challenge_method=S256
+        SDK-->>App: null, the outcome arrives later
+        OS->>Tracive: hand off to the Tracive app
+        Tracive->>Tracive: the user grants or denies consent
+        Tracive->>OS: open the partner redirect URI with code and state
+        OS->>SDK: the link reaches startLinkListener, which calls handleCallback(url)
+        SDK->>Store: read()
+        SDK->>SDK: statesMatch() runs BEFORE error or code is read
+        alt state mismatch, or a record older than 10 minutes
+            SDK-->>App: failed, stateMismatch
+        else clientType CONFIDENTIAL
+            SDK-->>App: codeReceived, carrying code and codeVerifier
+            Note over App,Api: Your backend completes the exchange with its client_secret
+        else clientType PUBLIC
+            SDK->>Api: POST /oauth/token, grant_type=authorization_code with code_verifier
+            Api-->>SDK: access token, refresh token, granted scope
+            SDK->>SDK: TokenStore.write(tokens)
+            SDK-->>App: authorized, with grantedScopes
+        end
+    end
+```
+
+Details worth knowing, all from `src/oauth/`:
+
+- The code verifier is 32 random bytes as base64url — 43 characters, entirely within the RFC 7636
+  unreserved set — and the challenge is `base64url(SHA-256(verifier))`. `CODE_CHALLENGE_METHOD` is
+  the constant `'S256'`; `plain` is not a value in any type here, not a parameter and not a
+  fallback.
+- `state` is another 32 random bytes, compared by `statesMatch` without an early return.
+- Presence **unknown** reports not installed. On Android `Linking.canOpenURL` rejects rather than
+  returning `false` when the host app has no matching `<queries>` block; that rejection is caught,
+  reported as not-installed, and surfaced as an `app_presence_probe_failed` diagnostic.
+- `authorize()` opens the install link itself when the app is absent. No PKCE pair is generated and
+  nothing is persisted on that path. The link carries attribution only — `ref` (your OAuth client
+  id) and `utm_source` — and `buildInstallUrl` strips any OAuth parameter already sitting on a
+  configured install URL rather than trusting it.
+- If the launch fails, the pending record is rolled back, so the next attempt does not inherit a
+  misleading "stale authorization" diagnostic for a launch that never happened.
+
+---
+
+## C. Token lifecycle
+
+`ensureAccessToken()` runs before every request, and it is re-read on every retry pass, so a token
+that expires mid-retry is renewed rather than replayed.
+
+The single-flight latch is the part to understand. Two simultaneous refreshes with the same rotating
+refresh token look exactly like token reuse to an authorization server, and reuse detection revokes
+the whole grant. `refreshTokens()` therefore assigns its latch with **no `await` between the lookup
+and the assignment**, so two concurrent callers cannot both observe an empty latch.
+
+```mermaid
+flowchart TD
+  Ensure["ensureAccessToken()"] --> Stored{"a grant in TokenStore?"}
+  Stored -->|"no"| NoGrant["throw TraciveError invalidToken"]
+  Stored -->|"yes"| Expiry{"expiry minus the 30s leeway is in the past?"}
+  Expiry -->|"no"| Use["use the stored access token"]
+  Expiry -->|"yes"| Refresh["refreshTokens(staleAccessToken)"]
+
+  Unauthorized["a 401 from any request"] --> Kind{"mapped error kind"}
+  Kind -->|"grantRevoked"| Terminal["clearTokens() and throw. Terminal, nothing is retried."]
+  Kind -->|"invalidToken"| Throw401["throw. A fresh token would earn nothing."]
+  Kind -->|"anything else, at most once per request"| Refresh
+
+  Refresh --> Latch{"is a refresh already in flight?"}
+  Latch -->|"yes"| Join["return the SAME promise. Concurrent callers coalesce."]
+  Latch -->|"no"| Start["assign the latch with no await, then refresh"]
+  Start --> Raced{"is the stored access token still the stale one?"}
+  Raced -->|"no"| Already["another caller already refreshed. Return what they wrote."]
+  Raced -->|"yes"| Post["POST /oauth/token, grant_type=refresh_token"]
+  Post -->|"2xx"| Write["TokenStore.write(tokens)"]
+  Post -->|"grant_revoked"| Revoked["TokenStore.clear(), then rethrow"]
+  Post -->|"any other error"| Rethrow["rethrow"]
+  Write --> Cleared["the latch is cleared in a finally block"]
+  Revoked --> Cleared
+  Rethrow --> Cleared
+```
+
+`signOut()` revokes the **refresh** token rather than the access token — revoking one access token
+leaves the grant alive and immediately re-issuable — and then clears local state regardless of what
+the server said, because a sign-out that fails because the network is down is not a sign-out any
+user would accept.
+
+The default `TokenStore` is in-memory, which is correct for tests and wrong for a shipping app. The
+Expo and bare adapters supply one backed by the platform secure store; so does
+`PendingAuthorizationStore`, whose record holds a live PKCE verifier.
+
+---
+
+## D. The check request path
+
+A rejected identifier costs nothing; a sent one costs a credit whether it hits or misses. So the
+order below is deliberate: reject locally, then try the cache, then collapse duplicates, and only
+then spend money.
+
+```mermaid
+flowchart TD
+  Build["a TraciveQuery factory folds the identifier"] --> Guard{"isValidRecordKey?"}
+  Guard -->|"no"| Rejected["throw TraciveQueryError. Nothing was sent and nothing was billed."]
+  Guard -->|"yes"| Call["client.checkScammer(query, options)"]
+  Call --> Key["CheckCacheKey.fromQuery, the SHA-256 of searchQueryIndex"]
+  Key --> Source{"source"}
+
+  Source -->|"CACHE"| Only{"cache.read"}
+  Only -->|"fresh hit"| Hit["return the CheckResult, origin CACHE"]
+  Only -->|"miss"| CacheMiss["throw TraciveError cacheMiss"]
+  Only -->|"storage fault"| Surface["the CheckCacheError surfaces as itself"]
+
+  Source -->|"CACHE_FIRST"| Tolerant{"cache.read, with a fault caught"}
+  Tolerant -->|"fresh hit"| Hit
+  Tolerant -->|"miss, or a fault reported as cache_read_failed"| Flight{"was an AbortSignal passed?"}
+
+  Source -->|"SERVER or SERVER_FIRST"| Flight
+  Flight -->|"yes"| Attempt["one attempt"]
+  Flight -->|"no"| Share["join or start the in-flight check, keyed on the cache key, detail and locale"]
+  Share --> Attempt
+
+  Attempt --> Abort{"is the signal already aborted?"}
+  Abort -->|"yes"| Aborted["throw. Checked on every pass, so a retry cannot spend a credit for a caller who gave up."]
+  Abort -->|"no"| Send["POST /scammer-checks with searchQueryIndex, detail and locale"]
+  Send --> Outcome{"response"}
+
+  Outcome -->|"2xx"| Ttl{"cache enabled and effective TTL above zero?"}
+  Outcome -->|"401 that is neither grantRevoked nor invalidToken"| Renew["refreshTokens once, then re-attempt"]
+  Renew --> Attempt
+  Outcome -->|"any other 4xx, including 402 and 403"| Fail["throw TraciveError"]
+  Outcome -->|"429, 5xx or a transport failure"| Budget{"idempotencyKey supplied and attempts remaining?"}
+  Budget -->|"no"| Fail
+  Budget -->|"yes"| Wait["sleep for Retry-After, or the jittered exponential backoff"]
+  Wait --> Attempt
+
+  Ttl -->|"no"| Return["return the CheckResult, origin SERVER"]
+  Ttl -->|"yes"| Store["toCacheableCopy, then seal and store"]
+  Store --> Return
+  Fail -->|"only when source is SERVER_FIRST and the error is transport-shaped"| Fallback["read the cache, return a hit, otherwise rethrow"]
+```
+
+"Transport-shaped" is exact: error kind `network`, `rateLimited` or `server`, or any status of 500
+and above. A 402 or a 403 is a real answer about your account and is never masked by a cached
+verdict.
+
+### Retrying costs money, so you have to ask
+
+`checkScammer` is retryable **only when you pass an `idempotencyKey`**. Without one the SDK cannot
+tell whether the first attempt was already charged, so the first 429, 5xx or timeout is surfaced
+immediately rather than gambling your credit on a guess. The same key is reused on every attempt,
+which is what lets the server deduplicate. `GET /credits` and `GET /profile` have no side effects
+and are always retryable.
+
+The 401-refresh branch deliberately does **not** consume the retry budget, and can happen at most
+once per request. A 401 is rejected before billing, so re-sending after a refresh cannot
+double-charge.
+
+### Overlapping checks
+
+The single-flight latch in `TraciveClient` is not the cache. Two `checkScammer` calls for the same
+identifier, at the same detail level and locale, that overlap in time collapse into one billable
+request and both receive its result — the double-tapped button and the list screen rendering the
+same identifier twice. The cache alone cannot cover this, because its write happens after both
+requests have already gone out.
+
+A call carrying an `AbortSignal` deliberately neither starts nor joins a shared flight: sharing
+would mean one caller's abort cancelling another caller's check.
+
+### What is never cached, and why
+
+Only a 2xx result is ever written. Errors are not cached, and `toCacheableCopy` drops four fields
+before anything is stored:
+
+| Dropped           | Why                                                                         |
+| ----------------- | --------------------------------------------------------------------------- |
+| `topChronologies` | Free-text reports about third parties. Not a partner app's data to hold.    |
+| `comments`        | The same.                                                                   |
+| `billing`         | Describes one transaction, and would be a lie replayed against a later hit. |
+| `checkId`         | Identifies a check that a cache hit did not perform.                        |
+
+`origin` is rewritten to `'CACHE'` so a caller can always tell a replay from a fresh answer. An
+effective TTL of zero or less means the entry is never stored at all: "immediately stale" is the
+only safe reading of a nonsense value, because the alternative arithmetic makes an entry eternally
+fresh.
+
+A failed cache **write** never fails a check that already succeeded. It emits a `cache_write_failed`
+diagnostic, costs one credit next time, and nothing more.
+
+Rows are AES-256-GCM envelopes whose additional authenticated data binds each record to its own
+cache key, so a moved row fails to open rather than producing a plausible verdict about the wrong
+identifier. TTLs, the bring-your-own-store seam and the storage-fault rules are in
+[caching.md](caching.md).
+
+---
+
+## E. Identifier folding
+
+The lookup key is not the string your user typed. Each `TraciveQuery` factory folds its input into
+the exact key the server indexes, and **throws rather than returning a query that cannot match**.
+The order of operations is part of a contract shared byte-for-byte with the Kotlin, Flutter and
+Swift SDKs, via `test/fixtures/query-grammar-vectors.json`: reordering the steps changes the output
+on edge inputs and would silently split one entity across two keys.
+
+```mermaid
+flowchart TD
+  Raw["a raw identifier from your UI"] --> Factory{"which factory"}
+
+  Factory -->|"phone"| P1["trim, remember a leading plus"]
+  P1 --> P2["strip everything outside ASCII 0-9, then restore the plus"]
+  P2 --> P3{"E.164 shape?"}
+  P3 -->|"no"| PErr["TraciveQueryError not_e164"]
+  P3 -->|"yes"| PKey["PHONE_ then the folded number"]
+
+  Factory -->|"email"| E1["NFC, then lowercase, then trim"]
+  E1 --> E2{"contains an at-sign?"}
+  E2 -->|"no"| EErr["TraciveQueryError not_an_email"]
+  E2 -->|"yes"| EKey["EMAIL_ then the folded address"]
+
+  Factory -->|"iban"| I1["uppercase, then strip whitespace and ASCII hyphens. No trim, no NFC."]
+  I1 --> IKey["BANK_IBAN_ then the folded account"]
+
+  Factory -->|"bankAccount"| B1["country: uppercase, trim, must be ISO 3166-1 alpha-3"]
+  B1 --> B2["bankCode: NFC, uppercase, trim, then drop every underscore"]
+  B2 --> B3["account: the same fold as an IBAN"]
+  B3 --> BKey["BANK_ country, bank code and account, joined by underscores"]
+
+  Factory -->|"crypto"| C1["chain: NFC, uppercase, trim"]
+  C1 --> C2{"is the address an EVM address?"}
+  C2 -->|"yes"| C3["trim, then lowercase"]
+  C2 -->|"no"| C4["trim only. Base58 is case-sensitive."]
+  C3 --> CKey["CRYPTO_ chain and address, joined by an underscore"]
+  C4 --> CKey
+
+  Factory -->|"username"| U1["platform: NFC, uppercase, trim"]
+  U1 --> U2["handle: NFC, lowercase, trim. A leading at-sign is KEPT."]
+  U2 --> UKey["USERNAME_ platform and handle, joined by an underscore"]
+
+  PKey --> Final{"isValidRecordKey?"}
+  EKey --> Final
+  IKey --> Final
+  BKey --> Final
+  CKey --> Final
+  UKey --> Final
+
+  Final -->|"no"| FErr["TraciveQueryError invalid_document_id"]
+  Final -->|"yes"| Index["query.searchQueryIndex, sent on the wire"]
+  Index --> Hash["SHA-256 of it gives the local CheckCacheKey"]
+```
+
+Notes that are easy to get wrong, and that the shared fixture pins:
+
+- **NFC is not applied everywhere.** It is applied to e-mail addresses, handles and every *code*
+  field — the platform code, the chain code and the bank code. It is **not** applied to bank account
+  ids, crypto addresses or phone numbers.
+- **The bank account fold has no separate trim step.** Uppercasing happens *before* the strip.
+- **An EVM address is lowercased; a base58 one is not.** Lowercasing a base58 address yields a
+  different and invalid address. The lowercase `0x` prefix in the EVM test is load-bearing, so
+  `0X...` is deliberately not folded.
+- **A leading at-sign on a handle is kept**, because the server preserves it. Stripping it here
+  would build a key that misses a report filed with it.
+- **Phone numbers must already be E.164** (`^\+[1-9][0-9]{6,14}$` after stripping). The server does
+  not up-convert a local number, so `081234567891` would become a different entity, miss, and still
+  be billed.
+- **`\D` is ASCII-only in JavaScript**, so an Arabic-Indic digit in a phone number is stripped,
+  never converted.
+
+`isValidRecordKey` mirrors the server's own rule on the *folded* key, because case mapping is not
+length-preserving. It rejects: the empty string, anything containing `/`, exactly `.`, exactly `..`,
+anything matching `^__.*__$`, anything holding a lone surrogate, and anything over 1500 UTF-8 bytes.
+Spaces, an interior `.`, `@`, `+`, `#`, `$`, `[`, `]`, `*`, `~`, emoji, `__x`, `x__` and a bare `_`
+are all explicitly allowed.
+
+The rejection reason keeps the frozen wire spelling `invalid_document_id` for cross-SDK parity, even
+though the module is named for what it guards.
+
+### The engine guards
+
+Two facilities the fold depends on can be missing *silently*. A JavaScript engine built without a
+real Unicode backend can implement `String.prototype.normalize` as a function that returns its input
+unchanged and raises no error, and the same reduced backend degrades `toUpperCase`/`toLowerCase` to
+the ASCII range. Either produces a key the server can never match — and a miss is billed exactly
+like a hit.
+
+So `src/query/nfc.ts` probes each one once and throws `TraciveConfigurationError`
+(`nfc_unavailable` or `case_mapping_unavailable`) rather than folding every key wrongly. Every
+React Native release builds Hermes with a platform Unicode backend, so this is satisfied by default
+on both platforms. The guards have not been exercised on a real device in this repository — see item
+1 of [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+
+---
+
+## F. Redaction
+
+JavaScript objects serialise by default, so a single `console.log`, a Reactotron dump or one
+crash-reporter breadcrumb is all it takes to print a live credential. The sibling SDKs had to opt
+*in* to leaking this; JavaScript leaks unless you opt *out*.
+
+Every credential-bearing object this SDK hands out therefore carries **both** a redacting `toJSON`
+and a redacting `toString`, both non-enumerable so they do not widen the public shape. Redacting
+only `toJSON` would still leak through string interpolation.
+
+```mermaid
+flowchart LR
+  Query["TraciveQuery"] --> QOut["kind kept, searchQueryIndex redacted"]
+  Key["CheckCacheKey"] --> KOut["the hex digest is replaced entirely"]
+  Code["AuthResult codeReceived"] --> COut["redirectUri kept, code and codeVerifier redacted"]
+  Tokens["TraciveTokens"] --> TOut["tokenType and scopes kept, both tokens redacted"]
+  Proxy["ProxyConfiguration"] --> POut["baseUrl and header NAMES kept, values redacted"]
+  Req["HttpRequest and HttpResponse"] --> ROut["method, url, status, header names, body size in BYTES"]
+  Profile["ProfileInfo"] --> PrOut["the subject identifier and the name are redacted"]
+```
+
+The values are still there for the code that needs them: the transport reads the real
+`Authorization` header, `key.hex` still reaches the store, and `result.code` is still readable by
+the caller who asked for it. Only the *serialisations* are redacted.
+
+Two consequences worth stating plainly:
+
+- `client.mode` is **not** the object you passed in proxy mode. It is a redacted copy; the live
+  header values are held in a private field that `JSON.stringify` cannot see. The object literal you
+  built is still yours — if you also hold a reference to it, redact or discard it on your side.
+- `HttpTransport` is a documented, encouraged injection point, so the request that crosses that seam
+  is redacted before it is handed over. A partner transport that logs its argument logs header names
+  and a body size, not a bearer token.
+
+The body size is measured in UTF-8 bytes rather than `String.prototype.length`, because a size in a
+crash report that does not match the size the server saw is worse than no size at all — somebody
+will eventually compare them.
+
+---
+
+## Where to go next
+
+- [integration.md](integration.md) — host app configuration, platform by platform, and
+  `npx tracive-doctor`
+- [oauth.md](oauth.md) — scopes, public versus confidential clients, and the install link
+- [caching.md](caching.md) — TTLs, encryption, and bringing your own store
+- [proxy-contract.md](proxy-contract.md) — the phase 2 gateway mode
+- [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — risks carried forward, stated plainly
+- [../SECURITY.md](../SECURITY.md) — the cryptography, including what is not independently audited
