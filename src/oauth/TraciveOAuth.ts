@@ -26,6 +26,7 @@ import { linkingLinkSource, startLinkListener, type LinkSource } from './linkLis
 import {
   InMemoryPendingAuthorizationStore,
   STALE_PENDING_AUTHORIZATION_HINT,
+  type PendingAuthorization,
   type PendingAuthorizationStore,
 } from './PendingAuthorization';
 import { createPkcePair, createState, statesMatch } from './pkce';
@@ -157,7 +158,7 @@ export class TraciveOAuth {
           hint: STALE_PENDING_AUTHORIZATION_HINT,
         });
       }
-      await this.#pendingStore.clear();
+      await this.#clearPendingQuietly();
     }
 
     const pkce = createPkcePair(this.#random);
@@ -188,7 +189,7 @@ export class TraciveOAuth {
       // Roll the record back: leaving it would age into a misleading "stale authorization"
       // diagnostic on the next attempt, blaming the host's link configuration for a launch that
       // never happened.
-      await this.#pendingStore.clear();
+      await this.#clearPendingQuietly();
       return {
         type: 'failed',
         error: new TraciveError({
@@ -205,7 +206,27 @@ export class TraciveOAuth {
 
   async handleCallback(url: string): Promise<AuthResult> {
     const params = parseCallbackParameters(url);
-    const pending = await this.#pendingStore.read();
+
+    let pending: PendingAuthorization | undefined;
+    try {
+      pending = await this.#pendingStore.read();
+    } catch (cause) {
+      // Backed by the platform secure store in both adapters, and that genuinely rejects:
+      // Keychain before first unlock, a SecureStore fault, a corrupted keystore. This method is
+      // typed `Promise<AuthResult>` and callers treat it as total, so a store fault has to come
+      // back as a result rather than as a rejection nobody is positioned to catch.
+      return {
+        type: 'failed',
+        error:
+          cause instanceof TraciveError
+            ? cause
+            : new TraciveError({
+                kind: 'unknown',
+                message: 'The pending authorization record could not be read.',
+                cause,
+              }),
+      };
+    }
 
     if (pending === undefined) {
       return {
@@ -221,7 +242,7 @@ export class TraciveOAuth {
     // must not be able to make the SDK act on its error message or its code.
     const returnedState = params.get('state') ?? '';
     if (!statesMatch(pending.state, returnedState)) {
-      await this.#pendingStore.clear();
+      await this.#clearPendingQuietly();
       return {
         type: 'failed',
         error: new TraciveError({
@@ -233,7 +254,7 @@ export class TraciveOAuth {
 
     const ageSeconds = (this.#clock.nowMs() - pending.createdAtMs) / 1000;
     if (ageSeconds > this.#pendingMaxAgeSeconds) {
-      await this.#pendingStore.clear();
+      await this.#clearPendingQuietly();
       this.#diagnose({
         code: 'pending_authorization_stale',
         severity: 'warning',
@@ -249,7 +270,7 @@ export class TraciveOAuth {
       };
     }
 
-    await this.#pendingStore.clear();
+    await this.#clearPendingQuietly();
 
     const error = params.get('error');
     if (error !== undefined && error !== '') {
@@ -308,9 +329,27 @@ export class TraciveOAuth {
 
   startLinkListener(): () => void {
     return startLinkListener(this.#linkSource, (url) => {
-      void this.handleCallback(url).then((result) => {
-        this.#publish(result);
-      });
+      void this.handleCallback(url)
+        .then((result) => {
+          this.#publish(result);
+        })
+        .catch((cause: unknown) => {
+          // `handleCallback` is total, so nothing should reach here. It exists anyway because
+          // the alternative is an unhandled rejection that drops the authorization result for
+          // good: the user finishes signing in, comes back, and the app never hears about it.
+          // On React Native that is a red box in development and near-silence in release.
+          this.#publish({
+            type: 'failed',
+            error:
+              cause instanceof TraciveError
+                ? cause
+                : new TraciveError({
+                    kind: 'unknown',
+                    message: 'The authorization redirect could not be processed.',
+                    cause,
+                  }),
+          });
+        });
     });
   }
 
@@ -399,6 +438,27 @@ export class TraciveOAuth {
     }
     await this.#tokenStore.clear();
     await this.#pendingStore.clear();
+  }
+
+  /**
+   * Clearing the record is cleanup, not the outcome. A store that cannot clear must not turn an
+   * authorization that otherwise succeeded into a failure; the stale record ages out on its own
+   * and the next `authorize()` overwrites it.
+   */
+  async #clearPendingQuietly(): Promise<void> {
+    try {
+      await this.#pendingStore.clear();
+    } catch {
+      this.#diagnose({
+        code: 'pending_authorization_clear_failed',
+        severity: 'warning',
+        message: 'The pending authorization record could not be cleared.',
+        hint:
+          'The secure store rejected a write. The record ages out after ' +
+          'pendingAuthorizationMaxAgeSeconds, so this is not fatal, but a store that cannot be ' +
+          'written is worth investigating.',
+      });
+    }
   }
 
   #publish(result: AuthResult): void {

@@ -4,6 +4,10 @@ import { FakeClock, FakeTransport, fixedRandom } from '../../__tests__/support/f
 import type { AuthResult } from '../../model/AuthResult';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
 import { startLinkListener, type LinkSource } from '../linkListener';
+import type {
+  PendingAuthorization,
+  PendingAuthorizationStore,
+} from '../PendingAuthorization';
 import { TraciveOAuth } from '../TraciveOAuth';
 
 const CONFIG: OAuthConfiguration = {
@@ -172,5 +176,82 @@ describe('cold-start buffering', () => {
     const unsubscribe = oauth.onAuthResult(() => undefined);
     expect(typeof unsubscribe).toBe('function');
     unsubscribe();
+  });
+});
+
+/**
+ * The platform secure store backs the pending record in both adapters, and it genuinely rejects:
+ * Keychain before first unlock, a SecureStore fault, a corrupted keystore. Every one of those
+ * used to surface as an unhandled promise rejection with the authorization result dropped on the
+ * floor — the user signs in, comes back, and nothing ever happens.
+ */
+describe('a pending store that rejects', () => {
+  const REDIRECT = 'https://your.app/oauth/callback?code=abc&state=xyz';
+
+  class ThrowingPendingStore implements PendingAuthorizationStore {
+    readonly failure = new Error('SecureStore unavailable');
+    read(): Promise<PendingAuthorization | undefined> {
+      return Promise.reject(this.failure);
+    }
+    write(): Promise<void> {
+      return Promise.reject(this.failure);
+    }
+    clear(): Promise<void> {
+      return Promise.reject(this.failure);
+    }
+  }
+
+  function build(): { oauth: TraciveOAuth; source: ControllableLinkSource } {
+    const source = new ControllableLinkSource();
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport: new FakeTransport(),
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      linkSource: source,
+      pendingStore: new ThrowingPendingStore(),
+      presence: { isTraciveAppInstalled: () => Promise.resolve(true) },
+      launcher: { openExternally: () => Promise.resolve(true) },
+    });
+    return { oauth, source };
+  }
+
+  it('makes handleCallback return a failed result rather than rejecting', async () => {
+    const { oauth } = build();
+    const result = await oauth.handleCallback(REDIRECT);
+    expect(result.type).toBe('failed');
+  });
+
+  it('still delivers a result through the link listener', async () => {
+    const { oauth, source } = build();
+    const received: AuthResult[] = [];
+    oauth.onAuthResult((result) => received.push(result));
+    const stop = oauth.startLinkListener();
+
+    source.resolveInitial(REDIRECT);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.type).toBe('failed');
+    stop();
+  });
+
+  it('leaves no unhandled rejection behind', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', record);
+    try {
+      const { oauth, source } = build();
+      oauth.onAuthResult(() => undefined);
+      const stop = oauth.startLinkListener();
+      source.resolveInitial(REDIRECT);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      stop();
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+    expect(unhandled).toEqual([]);
   });
 });
