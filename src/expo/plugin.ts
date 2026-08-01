@@ -1,5 +1,6 @@
 import {
   AndroidConfig,
+  WarningAggregator,
   withAndroidManifest,
   withEntitlementsPlist,
   withInfoPlist,
@@ -129,6 +130,38 @@ export function parseRedirectUri(redirectUri: string): RedirectParts {
 }
 
 /**
+ * Sets `android:launchMode="singleTask"` only when the host declared nothing.
+ *
+ * A stacked second activity instance would otherwise start a fresh task and never see the
+ * redirect, and `singleTask` avoids it — the persisted pending record makes the alternative
+ * survivable rather than fine. It is also what Expo defaults to, so for almost every project
+ * this is a no-op.
+ *
+ * It used to be assigned unconditionally, which silently rewrote a host that had deliberately
+ * chosen `standard` or `singleTop`. A prebuild that overwrites somebody's decision without
+ * saying so is worse than one that leaves it alone and complains: the host keeps their choice,
+ * and gets told which behaviour they are giving up. Returns the warnings to emit, so the
+ * decision is testable without a prebuild.
+ */
+export function applyTraciveLaunchMode(activity: {
+  $: Record<string, string | undefined>;
+}): string[] {
+  const declared = activity.$['android:launchMode'];
+  if (declared === undefined || declared === '') {
+    activity.$['android:launchMode'] = 'singleTask';
+    return [];
+  }
+  if (declared === 'singleTask') return [];
+  return [
+    `The main activity declares android:launchMode="${declared}"; Tracive expects ` +
+      '"singleTask" and has left your choice in place. With any other mode a second activity ' +
+      'instance can be stacked on top and the authorization redirect is delivered to an ' +
+      'instance that is not waiting for it. The persisted pending record means the ' +
+      'authorization is not lost, but the user may have to return to the app for it to land.',
+  ];
+}
+
+/**
  * Tier 2 of the three-tier verification story: for an Expo prebuild app, everything the host
  * would otherwise paste by hand is written automatically. Tier 1 is `npx tracive-doctor`, which
  * checks the result statically; tier 3 is the runtime diagnostic for the one case neither can
@@ -167,9 +200,9 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
     mergeTraciveQueries(manifest);
 
     const activity = AndroidConfig.Manifest.getMainActivityOrThrow(modConfig.modResults);
-    // A stacked second activity instance would otherwise start a fresh task and never see the
-    // redirect. The persisted pending record makes that survivable; singleTask avoids it.
-    activity.$['android:launchMode'] = 'singleTask';
+    for (const warning of applyTraciveLaunchMode(activity)) {
+      WarningAggregator.addWarningAndroid('@tracive/sdk-react-native', warning);
+    }
 
     const filters = (activity['intent-filter'] ?? []) as Record<string, unknown>[];
     const alreadyPresent = filters.some((filter) => {

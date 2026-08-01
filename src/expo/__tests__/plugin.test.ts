@@ -1,6 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { mergeTraciveQueries, parseRedirectUri, TRACIVE_ANDROID_PACKAGE } from '../plugin';
+import {
+  applyTraciveLaunchMode,
+  mergeTraciveQueries,
+  parseRedirectUri,
+  TRACIVE_ANDROID_PACKAGE,
+} from '../plugin';
 import { TRACIVE_APP_SCHEME } from '../../oauth/authorizeUrl';
 
 interface Named {
@@ -142,5 +147,38 @@ describe('parseRedirectUri', () => {
     // would write a manifest and an entitlement claiming a host nobody owns.
     expect(() => parseRedirectUri('https://your.app:8443/cb')).toThrow();
     expect(() => parseRedirectUri('https://user@your.app/cb')).toThrow();
+  });
+});
+
+/**
+ * `singleTask` is what this SDK wants and what Expo already defaults to, but a host that
+ * deliberately chose something else had it silently rewritten. A prebuild that overwrites a
+ * decision without saying so is worse than one that leaves it alone and complains.
+ */
+describe('the Android launchMode', () => {
+  it('sets singleTask when the host declared nothing', () => {
+    const activity: { $: Record<string, string | undefined> } = { $: {} };
+    const warnings = applyTraciveLaunchMode(activity);
+    expect(activity.$['android:launchMode']).toBe('singleTask');
+    expect(warnings).toEqual([]);
+  });
+
+  it('leaves an explicit singleTask alone and says nothing', () => {
+    const activity: { $: Record<string, string | undefined> } = {
+      $: { 'android:launchMode': 'singleTask' },
+    };
+    expect(applyTraciveLaunchMode(activity)).toEqual([]);
+    expect(activity.$['android:launchMode']).toBe('singleTask');
+  });
+
+  it('does NOT overwrite a different launchMode the host chose', () => {
+    const activity: { $: Record<string, string | undefined> } = {
+      $: { 'android:launchMode': 'singleTop' },
+    };
+    const warnings = applyTraciveLaunchMode(activity);
+    expect(activity.$['android:launchMode']).toBe('singleTop');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('singleTop');
+    expect(warnings[0]).toContain('singleTask');
   });
 });
