@@ -55,16 +55,6 @@ describe('shared grammar fixture', () => {
   });
 });
 
-/**
- * A fixture bump may land ahead of the rules it adds. When it does, an id listed here asserts what
- * this SDK does TODAY, so the gap is visible in the suite rather than skipped — a skipped case
- * reads as coverage. Each entry is deleted by the commit that implements its rule, and an entry
- * left behind turns red the moment the rule lands, so it cannot outlive the gap it documents.
- *
- * It is empty: every rejection rule in fixture v5 is implemented. `null` would mean "throws nothing
- * at all today".
- */
-const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {};
 
 describe('vectors', () => {
   it.each(fixture.vectors.map((vector) => [vector.id, vector] as const))(
@@ -91,8 +81,7 @@ describe('rejections', () => {
         thrown = error;
       }
 
-      const pending = Object.prototype.hasOwnProperty.call(PENDING_REJECTIONS, vector.id);
-      const expected = pending ? PENDING_REJECTIONS[vector.id] : vector.reason;
+      const expected = vector.reason;
       if (expected === null) {
         expect(thrown).toBeUndefined();
         return;
