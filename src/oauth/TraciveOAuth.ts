@@ -402,7 +402,9 @@ export class TraciveOAuth {
     const buffered = this.#bufferedResult;
     if (buffered !== undefined) {
       this.#bufferedResult = undefined;
-      listener(buffered);
+      // Through #deliver, because this happens BEFORE the unsubscribe closure is returned: a
+      // listener that threw here used to leave itself registered with no way to remove it.
+      this.#deliver(listener, buffered);
     }
     return () => {
       this.#listeners.delete(listener);
@@ -513,7 +515,28 @@ export class TraciveOAuth {
       this.#bufferedResult = result;
       return;
     }
-    for (const listener of this.#listeners) listener(result);
+    for (const listener of this.#listeners) this.#deliver(listener, result);
+  }
+
+  /**
+   * A listener throwing is the host app's bug. Losing the authorization result for every OTHER
+   * listener because of it would be this SDK's, so the failure is isolated and reported rather
+   * than propagated — and propagating it would land in `#publish`'s caller, which on the link
+   * path is a promise chain nobody can catch.
+   */
+  #deliver(listener: (result: AuthResult) => void, result: AuthResult): void {
+    try {
+      listener(result);
+    } catch (cause) {
+      this.#diagnose({
+        code: 'auth_result_listener_threw',
+        severity: 'error',
+        message: 'An onAuthResult listener threw; the remaining listeners were still called.',
+        hint:
+          'The error came from host-app code, not from the SDK: ' +
+          (cause instanceof Error ? cause.message : String(cause)),
+      });
+    }
   }
 
   async #doRefresh(options?: { staleAccessToken?: string }): Promise<TraciveTokens> {

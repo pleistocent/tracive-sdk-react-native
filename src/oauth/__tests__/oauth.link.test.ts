@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import { FakeClock, FakeTransport, fixedRandom } from '../../__tests__/support/fakes';
+import type { Diagnostic } from '../../diagnostics';
 import type { AuthResult } from '../../model/AuthResult';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
 import { startLinkListener, type LinkSource } from '../linkListener';
@@ -288,5 +289,71 @@ describe('a pending store that rejects', () => {
       process.off('unhandledRejection', record);
     }
     expect(unhandled).toEqual([]);
+  });
+});
+
+/**
+ * Listeners are host-app code. One of them throwing is the host's bug, but dropping the
+ * authorization result for every OTHER listener because of it is this SDK's.
+ */
+describe('a listener that throws', () => {
+  function build(): { oauth: TraciveOAuth; source: ControllableLinkSource; seen: Diagnostic[] } {
+    const source = new ControllableLinkSource();
+    const seen: Diagnostic[] = [];
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport: new FakeTransport(),
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      linkSource: source,
+      presence: { isTraciveAppInstalled: () => Promise.resolve(true) },
+      launcher: { openExternally: () => Promise.resolve(true) },
+      onDiagnostic: (diagnostic) => seen.push(diagnostic),
+    });
+    return { oauth, source, seen };
+  }
+
+  it('does not stop delivery to the listeners after it', async () => {
+    const { oauth, source, seen } = build();
+    const delivered: string[] = [];
+    oauth.onAuthResult(() => delivered.push('first'));
+    oauth.onAuthResult(() => {
+      throw new Error('host bug');
+    });
+    oauth.onAuthResult(() => delivered.push('third'));
+
+    const stop = oauth.startLinkListener();
+    source.resolveInitial('https://your.app/oauth/callback?code=abc&state=nope');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    stop();
+
+    expect(delivered).toEqual(['first', 'third']);
+    expect(seen.some((diagnostic) => diagnostic.code === 'auth_result_listener_threw')).toBe(true);
+  });
+
+  it('still hands back a working unsubscribe when it throws on the buffered result', async () => {
+    // The buffered result is delivered synchronously BEFORE the unsubscribe closure is returned,
+    // so a listener that throws there used to leave itself registered with no way to remove it.
+    const { oauth, source } = build();
+    const stop = oauth.startLinkListener();
+    source.resolveInitial('https://your.app/oauth/callback?code=abc&state=nope');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let calls = 0;
+    const unsubscribe = oauth.onAuthResult(() => {
+      calls += 1;
+      throw new Error('host bug');
+    });
+    expect(calls).toBe(1);
+    expect(typeof unsubscribe).toBe('function');
+    unsubscribe();
+
+    const later: AuthResult[] = [];
+    oauth.onAuthResult((result) => later.push(result));
+    source.emit('https://your.app/oauth/callback?code=def&state=nope');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(1);
+    expect(later).toHaveLength(1);
+    stop();
   });
 });
