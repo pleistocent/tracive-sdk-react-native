@@ -113,7 +113,13 @@ export class InMemoryCheckCache implements CheckCache {
   write(result: CheckResult, key: CheckCacheKey): Promise<void> {
     if (!this.policy.enabled) return Promise.resolve();
     const ttlSeconds = CachePolicy.effectiveTtlSeconds(this.policy, result);
-    if (ttlSeconds <= 0) return Promise.resolve();
+    if (ttlSeconds <= 0) {
+      // Deleted rather than skipped, for the reason spelled out in `PersistentCheckCache.write`:
+      // a zero TTL is the server retracting an answer, so leaving the previous entry in place
+      // would keep serving the verdict it just withdrew.
+      this.#entries.delete(key.hex);
+      return Promise.resolve();
+    }
     const cacheable = toCacheableCopy(result);
     this.#entries.set(key.hex, {
       result: cacheable,

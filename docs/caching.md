@@ -90,9 +90,13 @@ removes that dependency entirely.
 A `cacheTtlSeconds` on the response **overrides** the per-tier default while
 `honorsServerTtlOverride` is on. That is the fleet-wide invalidation lever — leave it on.
 
-A negative or zero effective TTL clamps to zero and the entry is never stored: "immediately stale"
+A negative or zero effective TTL clamps to zero, and the entry is not stored — "immediately stale"
 is the only safe reading of a nonsense value, because the alternative arithmetic makes an entry
-eternally fresh.
+eternally fresh. It also **deletes whatever was already held under that key**, which is the point
+rather than housekeeping: a zero TTL is the only way the server can withdraw an answer that has
+already reached the device. Skipping the write alone would honour the instruction for the new
+result and ignore it for the stored one, so a `HIGH` verdict the server has since corrected would
+keep being served for the rest of its thirty days.
 
 `fetchedAt` is stamped from the same clock that measures freshness, so a device with a skewed system
 time cannot produce an entry that is fresh against one clock and stale against another.

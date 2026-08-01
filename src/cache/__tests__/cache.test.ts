@@ -105,6 +105,17 @@ describe('InMemoryCheckCache', () => {
     expect(await cache.count()).toBe(0);
   });
 
+  it('lets a zero TTL retract the entry already held for that key', async () => {
+    const cache = new InMemoryCheckCache({ clock: new FakeClock() });
+    await cache.write(result({ riskTier: 'HIGH' }), KEY);
+    expect(await cache.read(KEY)).toBeDefined();
+
+    await cache.write(result({ riskTier: 'NONE', cacheTtlSeconds: 0 }), KEY);
+
+    expect(await cache.read(KEY)).toBeUndefined();
+    expect(await cache.count()).toBe(0);
+  });
+
   it('honours maxEntries', async () => {
     const cache = new InMemoryCheckCache({
       policy: CachePolicy.create({ maxEntries: 1 }),
@@ -238,6 +249,38 @@ describe('PersistentCheckCache', () => {
     await cache.write(result(), KEY);
     await cache.clear();
     expect(store.rows.size).toBe(0);
+  });
+
+  /**
+   * A zero TTL is the only channel the server has for withdrawing an answer that already reached
+   * the device. Skipping the write honours it for the new result and ignores it for the stored
+   * one, which leaves a corrected HIGH verdict readable for the rest of its thirty-day TTL.
+   */
+  it('deletes the stored row when the server retracts with a zero TTL', async () => {
+    const { cache, store } = build();
+    await cache.write(result({ riskTier: 'HIGH' }), KEY);
+    expect(store.rows.has(KEY.hex)).toBe(true);
+
+    await cache.write(result({ riskTier: 'NONE', cacheTtlSeconds: 0 }), KEY);
+
+    expect(store.rows.has(KEY.hex)).toBe(false);
+    expect(await cache.read(KEY)).toBeUndefined();
+  });
+
+  it('treats a negative TTL as the same retraction, because the policy clamps it to zero', async () => {
+    const { cache, store } = build();
+    await cache.write(result({ riskTier: 'HIGH' }), KEY);
+    await cache.write(result({ riskTier: 'HIGH', cacheTtlSeconds: -1 }), KEY);
+    expect(store.rows.has(KEY.hex)).toBe(false);
+  });
+
+  it('leaves other keys alone when one is retracted', async () => {
+    const { cache, store } = build();
+    await cache.write(result(), KEY);
+    await cache.write(result(), OTHER_KEY);
+    await cache.write(result({ cacheTtlSeconds: 0 }), KEY);
+    expect(store.rows.has(KEY.hex)).toBe(false);
+    expect(store.rows.has(OTHER_KEY.hex)).toBe(true);
   });
 
   it('opens eagerly so a broken key store fails before a check does', async () => {
