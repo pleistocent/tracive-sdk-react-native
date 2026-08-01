@@ -64,7 +64,19 @@ export function redirectTarget(url: string): string {
   return base.replace(/\/+$/, '').toLowerCase();
 }
 
+/**
+ * How the Tracive app is named on each platform. THE one definition of each, deliberately.
+ *
+ * The Android application id used to be written out three times — here in the OAuth flow, in the
+ * doctor's checks, and in the Expo config plugin — and the scheme twice. Those are not three
+ * copies of a string; they are three copies of an agreement that has to hold with the app on the
+ * user's device. The plugin writes the `<queries>` entry, the doctor reads it back and reports on
+ * it, and the flow probes it at runtime, so a value edited in one place and not the others makes
+ * the doctor certify a manifest the SDK will not accept, or the plugin write one the doctor calls
+ * wrong. Nothing about that failure points at the discrepancy.
+ */
 export const TRACIVE_APP_SCHEME = 'tracive';
+export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 export const APP_PRESENCE_PROBE_URL = 'tracive://authorize';
 export const DEFAULT_INSTALL_URL = 'https://tracive.chottu.link/install';
 

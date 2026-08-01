@@ -22,6 +22,7 @@ import {
   DEFAULT_INSTALL_URL,
   parseCallbackParameters,
   redirectTarget,
+  TRACIVE_ANDROID_PACKAGE,
   TRACIVE_APP_SCHEME,
 } from './authorizeUrl';
 import { linkingLinkSource, startLinkListener, type LinkSource } from './linkListener';
@@ -33,8 +34,6 @@ import {
 } from './PendingAuthorization';
 import { createPkcePair, createState, statesMatch } from './pkce';
 import { InMemoryTokenStore, type TokenStore } from './TokenStore';
-
-const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 
 /**
  * How long a pending authorization record stays usable.

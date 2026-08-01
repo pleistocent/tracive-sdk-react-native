@@ -7,9 +7,11 @@ import {
   type ConfigPlugin,
 } from '@expo/config-plugins';
 
-import { TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
+import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
 
-export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
+// Re-exported so the plugin's own tests can name it; the definition lives with the flow that
+// probes for the app at runtime. See `authorizeUrl.ts`.
+export { TRACIVE_ANDROID_PACKAGE };
 
 const VIEW_ACTION = 'android.intent.action.VIEW';
 

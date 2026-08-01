@@ -12,6 +12,16 @@
  * fails loudly.
  */
 
+import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
+
+/**
+ * Re-exported, not redefined. These used to be a second copy of the two values the OAuth flow
+ * already owns, which is the one thing this tool must not be: it exists to tell an integrator
+ * whether their manifest agrees with the SDK, and a doctor working from its own copy of the answer
+ * can certify a manifest the SDK will then refuse. See `authorizeUrl.ts`.
+ */
+export { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME };
+
 export type FindingSeverity = 'error' | 'warning';
 
 export interface Finding {
@@ -21,9 +31,6 @@ export interface Finding {
   /** The exact block to paste, when there is one. */
   readonly fix?: string;
 }
-
-export const TRACIVE_APP_SCHEME = 'tracive';
-export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 
 export interface RedirectTarget {
   readonly host: string;
