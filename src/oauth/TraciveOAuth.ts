@@ -1,5 +1,5 @@
 import { apiUrl, formUrlEncode, TRACIVE_API_PATHS } from '../client/TraciveApi';
-import { FetchHttpTransport, type HttpTransport } from '../client/HttpTransport';
+import { FetchHttpTransport, redactedRequest, type HttpTransport } from '../client/HttpTransport';
 import { systemClock, type TraciveClock } from '../client/TraciveClock';
 import { defaultRandom, type TraciveRandom } from '../crypto/random';
 import { emitDiagnostic, type Diagnostic, type DiagnosticSink } from '../diagnostics';
@@ -377,19 +377,22 @@ export class TraciveOAuth {
     const refreshToken = tokens?.refreshToken;
     if (refreshToken !== undefined) {
       try {
-        await this.#transport.send({
-          method: 'POST',
-          url: apiUrl(this.#environment, TRACIVE_API_PATHS.revoke),
-          headers: {
-            'content-type': 'application/x-www-form-urlencoded',
-            accept: 'application/json',
-          },
-          body: formUrlEncode([
-            ['token', refreshToken],
-            ['token_type_hint', 'refresh_token'],
-            ['client_id', this.#config.clientId],
-          ]),
-        });
+        // Redacted at the seam: the body carries the refresh token, which is the whole grant.
+        await this.#transport.send(
+          redactedRequest({
+            method: 'POST',
+            url: apiUrl(this.#environment, TRACIVE_API_PATHS.revoke),
+            headers: {
+              'content-type': 'application/x-www-form-urlencoded',
+              accept: 'application/json',
+            },
+            body: formUrlEncode([
+              ['token', refreshToken],
+              ['token_type_hint', 'refresh_token'],
+              ['client_id', this.#config.clientId],
+            ]),
+          }),
+        );
       } catch {
         // Best effort by design.
       }
@@ -444,15 +447,18 @@ export class TraciveOAuth {
   }
 
   async #exchange(fields: readonly (readonly [string, string])[]): Promise<TraciveTokens> {
-    const response = await this.#transport.send({
-      method: 'POST',
-      url: apiUrl(this.#environment, TRACIVE_API_PATHS.token),
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        accept: 'application/json',
-      },
-      body: formUrlEncode(fields),
-    });
+    // Redacted at the seam: this body carries the PKCE code verifier or the refresh token.
+    const response = await this.#transport.send(
+      redactedRequest({
+        method: 'POST',
+        url: apiUrl(this.#environment, TRACIVE_API_PATHS.token),
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+        },
+        body: formUrlEncode(fields),
+      }),
+    );
 
     const body = parseJsonBody(response.body) as TokenResponseBody;
 

@@ -119,11 +119,13 @@ export class FetchHttpTransport implements HttpTransport {
         ...(request.body !== undefined ? { body: request.body } : {}),
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
       });
-      return {
+      // Redacted on the way out, so that a partner who wraps or logs this transport's return
+      // value cannot print a `set-cookie`, a token response body or a subject id.
+      return redactedResponse({
         status: response.status,
         headers: normalizeHeaders(response.headers),
         body: await response.text(),
-      };
+      });
     } catch (cause) {
       // Offline, DNS, TLS, timeout and abort all land here. An aborted request is a network
       // error as far as a caller is concerned: the work stopped and nothing was learned.

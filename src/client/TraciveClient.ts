@@ -11,12 +11,13 @@ import type { Detail, Source } from '../model/enums';
 import type { ProfileInfo } from '../model/ProfileInfo';
 import { TraciveEnvironment } from '../model/TraciveEnvironment';
 import { parseRetryAfterSeconds, TraciveError, traciveErrorFrom } from '../model/TraciveError';
-import type { TraciveMode } from '../model/TraciveMode';
+import { redactedProxyConfiguration, type TraciveMode } from '../model/TraciveMode';
 import { TraciveOAuth } from '../oauth/TraciveOAuth';
 import type { TokenStore } from '../oauth/TokenStore';
 import type { TraciveQuery } from '../query/TraciveQuery';
 import {
   FetchHttpTransport,
+  redactedRequest,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport,
@@ -68,6 +69,11 @@ interface Attempt {
 }
 
 export class TraciveClient {
+  /**
+   * Safe to serialise. In proxy mode this is NOT the object the caller passed: the header values
+   * are replaced with `[redacted]` and a non-enumerable `toJSON` reduces it further to header
+   * names. The live values live in `#mode`, which `JSON.stringify` cannot see.
+   */
   readonly mode: TraciveMode;
   readonly environment: TraciveEnvironment;
   readonly cachePolicy: CachePolicy;
@@ -77,12 +83,21 @@ export class TraciveClient {
   /** `undefined` in proxy mode, where the partner's own backend holds the credentials. */
   readonly oauth: TraciveOAuth | undefined;
 
+  /**
+   * The caller's mode, with the proxy credentials intact. Private so that a breadcrumb, a
+   * Reactotron dump or a bare `console.log(client)` cannot reach it.
+   */
+  readonly #mode: TraciveMode;
   readonly #transport: HttpTransport;
   readonly #clock: TraciveClock;
   readonly #onDiagnostic: DiagnosticSink | undefined;
 
   constructor(options: TraciveClientOptions) {
-    this.mode = options.mode;
+    this.#mode = options.mode;
+    this.mode =
+      options.mode.type === 'proxy'
+        ? { type: 'proxy', config: redactedProxyConfiguration(options.mode.config) }
+        : options.mode;
     this.environment = options.environment ?? TraciveEnvironment.production;
     this.cachePolicy = options.cachePolicy ?? CachePolicy.default;
     this.defaultSource = options.defaultSource ?? 'CACHE_FIRST';
@@ -301,16 +316,17 @@ export class TraciveClient {
   }
 
   async #authorizationHeaders(): Promise<Record<string, string>> {
-    if (this.mode.type === 'proxy') {
-      return { ...(this.mode.config.authHeaders ?? {}) };
+    if (this.#mode.type === 'proxy') {
+      // Deliberately the RAW mode. `this.mode` holds `[redacted]` in place of every value.
+      return { ...(this.#mode.config.authHeaders ?? {}) };
     }
     const token = await this.#requireOAuth().ensureAccessToken();
     return { authorization: `Bearer ${token}` };
   }
 
   #urlFor(path: string): string {
-    return this.mode.type === 'proxy'
-      ? proxyUrl(this.mode.config.baseUrl, path)
+    return this.#mode.type === 'proxy'
+      ? proxyUrl(this.#mode.config.baseUrl, path)
       : apiUrl(this.environment, path);
   }
 
@@ -342,7 +358,11 @@ export class TraciveClient {
 
       let response: HttpResponse;
       try {
-        response = await this.#transport.send(request);
+        // `redactedRequest` is what actually crosses the seam. `HttpTransport` is a documented,
+        // encouraged injection point, so a partner transport that logs its argument would
+        // otherwise log a live bearer token or a live gateway key. The values are still there
+        // for the transport to read; only the serialisations are redacted.
+        response = await this.#transport.send(redactedRequest(request));
       } catch (cause) {
         const error =
           cause instanceof TraciveError
@@ -373,7 +393,7 @@ export class TraciveClient {
           await this.oauth?.clearTokens();
           throw error;
         }
-        if (error.kind === 'expiredToken' && !refreshed && this.mode.type === 'oauth') {
+        if (error.kind === 'expiredToken' && !refreshed && this.#mode.type === 'oauth') {
           // A 401 is rejected before billing, so re-sending after a refresh cannot double-charge
           // and deliberately does NOT consume the retry budget.
           refreshed = true;

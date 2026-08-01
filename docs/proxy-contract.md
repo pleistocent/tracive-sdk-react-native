@@ -32,8 +32,11 @@ const client = new TraciveClient({
   split one entity across several keys.
 - The cache, the record-key guard, the retry rules and the error mapping.
 - **There is still no API key parameter.** `authHeaders` is whatever _your own_ gateway expects
-  between your app and your backend; the SDK neither defines nor interprets it. It is redacted to
-  header names on every serialisation path, so it cannot reach a crash report.
+  between your app and your backend; the SDK neither defines nor interprets it. Once it is inside
+  the SDK it is redacted to header names on every serialisation path — `client.mode` and the
+  `HttpRequest` handed to your `HttpTransport` both print header names and never values — so it
+  cannot reach a crash report through the SDK. The object literal you built and passed in is still
+  yours: if you also hold a reference to it, redact or discard it on your side.
 
 ## Notes for whoever builds the gateway
 
