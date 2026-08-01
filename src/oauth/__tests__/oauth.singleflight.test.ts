@@ -1,8 +1,15 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
+import {
+  completed,
+  FakeClock,
+  FakeTransport,
+  fixedRandom,
+  jsonResponse,
+} from '../../__tests__/support/fakes';
 import type { HttpRequest, HttpResponse, HttpTransport } from '../../client/HttpTransport';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
+import { parseCallbackParameters } from '../authorizeUrl';
 import { InMemoryTokenStore } from '../TokenStore';
 import { TraciveOAuth } from '../TraciveOAuth';
 
@@ -246,6 +253,152 @@ describe('the spent-refresh-token guard', () => {
 
     expect(refreshed.accessToken).toBe('after');
     expect(transport.requests).toHaveLength(3);
+  });
+});
+
+/**
+ * RFC 6749 section 6 lets a token endpoint leave `refresh_token` out of a refresh response, and
+ * leaving it out means "keep the one you have" — not "you no longer have one". Building the stored
+ * grant without it therefore threw away a live credential in answer to a fully conforming reply,
+ * and the user was sent back through consent for a grant that never ended.
+ */
+describe('a refresh response that omits refresh_token', () => {
+  function build(...responses: (HttpResponse | Error)[]): {
+    oauth: TraciveOAuth;
+    transport: FakeTransport;
+    store: InMemoryTokenStore;
+  } {
+    const transport = new FakeTransport().enqueue(...responses);
+    const store = new InMemoryTokenStore({
+      accessToken: 'stale-access',
+      refreshToken: 'the-refresh-token',
+      tokenType: 'Bearer',
+      scopes: ['checks:read'],
+    });
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      tokenStore: store,
+    });
+    return { oauth, transport, store };
+  }
+
+  it('carries the previous refresh token forward into the stored grant', async () => {
+    const { oauth, store } = build(
+      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
+    );
+
+    const tokens = await oauth.refreshTokens();
+
+    expect(tokens.accessToken).toBe('renewed');
+    expect(tokens.refreshToken).toBe('the-refresh-token');
+    expect((await store.read())?.refreshToken).toBe('the-refresh-token');
+  });
+
+  /**
+   * The discriminating case, and the one the carry-forward is for. A carried-forward token is the
+   * same string that was marked spent before the request went out, and a 2xx does not take that
+   * mark off — so without the release the grant is refused locally on its very next use and the
+   * carry-forward buys nothing at all. The queued second response is what makes the failure
+   * visible: an implementation that refuses never reaches it.
+   */
+  it('leaves that carried-forward token usable for the next refresh', async () => {
+    const { oauth, transport } = build(
+      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer' }),
+      jsonResponse(200, { access_token: 'again', refresh_token: 'rotated', token_type: 'Bearer' }),
+    );
+
+    await oauth.refreshTokens();
+    const second = await oauth.refreshTokens();
+
+    expect(second.accessToken).toBe('again');
+    expect(transport.requests).toHaveLength(2);
+    // Asserted on the recorded request rather than on the outcome: what matters is that the token
+    // the server told us to keep is the one that went back out.
+    expect(transport.requests[1]?.body).toContain('refresh_token=the-refresh-token');
+  });
+
+  /**
+   * The same release, reached the other way. A server that does not rotate answers with the
+   * identical value instead of omitting the field, and that token is no more spent than an omitted
+   * one — it was just handed back by the server that would have rotated it.
+   */
+  it('leaves a re-issued identical token usable too', async () => {
+    const { oauth, transport } = build(
+      jsonResponse(200, { access_token: 'a2', refresh_token: 'the-refresh-token' }),
+      jsonResponse(200, { access_token: 'a3', refresh_token: 'the-refresh-token' }),
+    );
+
+    await oauth.refreshTokens();
+    const second = await oauth.refreshTokens();
+
+    expect(second.accessToken).toBe('a3');
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('treats a whitespace-only refresh token in the response as omitted', async () => {
+    // Storing it would leave a grant that cannot be renewed — `#doRefresh` refuses a blank token
+    // locally — in place of one that still can.
+    const { oauth, store } = build(jsonResponse(200, { access_token: 'a2', refresh_token: '  ' }));
+
+    await oauth.refreshTokens();
+
+    expect((await store.read())?.refreshToken).toBe('the-refresh-token');
+  });
+
+  it('still rotates when the server does issue a new one', async () => {
+    const { oauth, store } = build(
+      jsonResponse(200, { access_token: 'a2', refresh_token: 'rotated', token_type: 'Bearer' }),
+    );
+
+    await oauth.refreshTokens();
+
+    expect((await store.read())?.refreshToken).toBe('rotated');
+  });
+
+  /**
+   * The CODE EXCHANGE has no previous token, so an absent one there is genuinely absent. Carrying
+   * one forward from whatever happens to be in the store would attach a dead grant's credential to
+   * a brand-new authorization — which is exactly the state a re-authorization exists to leave.
+   */
+  it('does not invent one on the code exchange', async () => {
+    const transport = new FakeTransport();
+    const store = new InMemoryTokenStore({
+      accessToken: 'old-access',
+      refreshToken: 'the-old-refresh-token',
+      tokenType: 'Bearer',
+      scopes: [],
+    });
+    const opened: string[] = [];
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      tokenStore: store,
+      presence: { isTraciveAppInstalled: () => Promise.resolve(true) },
+      launcher: {
+        openExternally: (url) => {
+          opened.push(url);
+          return Promise.resolve(true);
+        },
+      },
+    });
+
+    await oauth.authorize();
+    const state = parseCallbackParameters(opened[0] ?? '').get('state') ?? '';
+    transport.enqueue(jsonResponse(200, { access_token: 'brand-new', token_type: 'Bearer' }));
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?code=abc&state=${encodeURIComponent(state)}`,
+      ),
+    );
+
+    expect(result.type).toBe('authorized');
+    expect((await store.read())?.accessToken).toBe('brand-new');
+    expect((await store.read())?.refreshToken).toBeUndefined();
   });
 });
 

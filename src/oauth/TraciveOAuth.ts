@@ -1001,7 +1001,7 @@ export class TraciveOAuth {
 
     let tokens: TraciveTokens;
     try {
-      tokens = this.#decodeTokenResponse(response);
+      tokens = this.#decodeTokenResponse(response, refreshToken);
     } catch (error) {
       // `grant_revoked` is terminal: the grant is gone, so retrying can only produce more of the
       // same. Discard locally so the app asks for authorization instead of looping — and move the
@@ -1012,6 +1012,14 @@ export class TraciveOAuth {
       }
       throw error;
     }
+
+    // The token that went out is the token this grant keeps, either because the response omitted
+    // `refresh_token` — "keep the one you have" — or because the server re-issued the identical
+    // value. The mark set before the request has to come off in both cases: a 2xx does not release
+    // it above, so leaving it would refuse the very NEXT refresh, locally, for a token the server
+    // itself just handed back. That is not the hazard the marker exists for. It exists for a token
+    // whose fate is unknown, and this one's fate is exactly what the server has answered.
+    if (tokens.refreshToken === refreshToken) this.#releaseRefreshToken(refreshToken);
 
     // Outside the `try` deliberately. Thrown inside it, this would fall into the branch above and
     // discard a second time — dropping a latch that by then may belong to a NEWER flight, which is
@@ -1059,7 +1067,12 @@ export class TraciveOAuth {
     );
   }
 
-  #decodeTokenResponse(response: HttpResponse): TraciveTokens {
+  /**
+   * @param previousRefreshToken the refresh token that was PRESENTED to obtain this response, when
+   *   there was one. Only the refresh path has one; the code exchange does not, and there an absent
+   *   `refresh_token` is genuinely absent rather than withheld.
+   */
+  #decodeTokenResponse(response: HttpResponse, previousRefreshToken?: string): TraciveTokens {
     const body = parseJsonBody(response.body) as TokenResponseBody;
 
     if (response.status < 200 || response.status >= 300) {
@@ -1082,10 +1095,23 @@ export class TraciveOAuth {
       });
     }
 
+    // A refresh response is ALLOWED to carry no `refresh_token`, and RFC 6749 section 6 says what
+    // that means: keep the one you have. Building the grant without it read the omission as "you no
+    // longer have one" — so a fully conforming reply left this SDK unable to refresh again and sent
+    // the user back through consent for a grant that never ended. The Flutter and Swift SDKs carry
+    // the previous token forward here; this is the same rule.
+    //
+    // Blank counts as omitted, exactly as it does for the access token above. A refresh token of
+    // spaces can renew nothing — `#doRefresh` refuses to present one — so accepting it as the
+    // server's new credential would replace a working token with an unusable one.
+    const issued = body.refresh_token;
+    const refreshToken =
+      typeof issued === 'string' && issued.trim() !== '' ? issued : previousRefreshToken;
+
     const expiresIn = body.expires_in;
     return redactedTokens({
       accessToken,
-      ...(typeof body.refresh_token === 'string' ? { refreshToken: body.refresh_token } : {}),
+      ...(refreshToken !== undefined ? { refreshToken } : {}),
       tokenType: body.token_type ?? 'Bearer',
       ...(typeof expiresIn === 'number'
         ? { expiresAt: new Date(this.#clock.nowMs() + expiresIn * 1000) }

@@ -39,6 +39,26 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A refresh response that omitted `refresh_token` threw the grant away.** RFC 6749 §6 lets a
+  token endpoint leave the field out of a refresh response, and leaving it out means _keep the one
+  you have_ — not _you no longer have one_. The decoder built a fresh record and copied the field
+  across only when the server sent one, so a fully conforming reply left the stored grant with no
+  refresh token at all: the next renewal failed with `invalidToken`, and the user was sent back
+  through consent for a grant that had never ended. The token that was presented is now carried
+  forward whenever the response withholds one, and a blank value counts as withheld for the same
+  reason a blank access token does — it can renew nothing, so accepting it would replace a working
+  credential with an unusable one. The code exchange is deliberately untouched: it has no previous
+  token, so an absent one there is genuinely absent. Flutter and Swift have always carried it
+  forward.
+
+  Carrying it forward needed a second half to be worth anything. A refresh token is marked as
+  presented before the request leaves, and only a **non-2xx** response takes that mark back off — so
+  the carried-forward token, which is the very string that was just marked, was refused locally on
+  its next use. The grant was lost one step later rather than kept. The mark now comes off whenever
+  the token that comes back is the token that went out, which also repairs the same failure reached
+  from the other side: a server that does not rotate answers with the identical value, and this SDK
+  refused to present it a second time.
+
 - **A whitespace-only access token was sent as `Bearer    ` instead of being repaired.** The
   damaged-grant repair added earlier in this section tested the stored access token for
   _emptiness_, so `''` healed itself and `'  '` did not — and a token of spaces or a stray newline
