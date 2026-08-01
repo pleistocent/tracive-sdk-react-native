@@ -15,6 +15,7 @@ import { RetryPolicy } from '../RetryPolicy';
 import { TraciveClient } from '../TraciveClient';
 
 const QUERY = TraciveQuery.phone('+6281234567891');
+const OTHER_QUERY = TraciveQuery.phone('+6281234567892');
 
 function build(transport: FakeTransport): {
   client: TraciveClient;
@@ -186,6 +187,8 @@ describe('a 401 that carries no recognised code', () => {
 
 describe('two concurrent 401s', () => {
   it('produce exactly one refresh between them', async () => {
+    // Two DIFFERENT identifiers on purpose: two concurrent checks of the same one are collapsed
+    // into a single billable request, which would leave only one 401 and prove nothing here.
     const transport = new FakeTransport()
       .enqueue(jsonResponse(401, { code: 'expired_token' }))
       .enqueue(jsonResponse(401, { code: 'expired_token' }))
@@ -195,7 +198,7 @@ describe('two concurrent 401s', () => {
 
     await Promise.all([
       client.checkScammer(QUERY, { source: 'SERVER' }),
-      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(OTHER_QUERY, { source: 'SERVER' }),
     ]);
 
     const refreshes = transport.requests.filter((request) => request.url.endsWith('/oauth/token'));

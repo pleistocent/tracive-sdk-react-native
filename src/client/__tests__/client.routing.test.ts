@@ -365,3 +365,120 @@ describe('a 2xx body that is not JSON', () => {
     expect(credits).toBeDefined();
   });
 });
+
+/**
+ * A miss costs the same as a hit, so the cache is a billing feature — and two overlapping checks
+ * for the same identifier both missed, both POSTed and both were charged. The cache write is the
+ * only serialisation point and it happens after both requests have already gone out. A
+ * double-tapped "check this number" button, or a list screen rendering the same identifier in two
+ * cells, doubled the bill.
+ */
+describe('concurrent identical checks', () => {
+  it('are collapsed into a single billable request', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    const [first, second] = await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(1);
+    expect(first.riskTier).toBe('HIGH');
+    expect(second.riskTier).toBe('HIGH');
+  });
+
+  it('are collapsed under CACHE_FIRST too, where both miss the cache', async () => {
+    const clock = new FakeClock();
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport, cache: new InMemoryCheckCache({ clock }), clock });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'CACHE_FIRST' }),
+      client.checkScammer(QUERY, { source: 'CACHE_FIRST' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('are NOT collapsed across different detail levels', async () => {
+    // A minimal result must never satisfy a full request.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER', detail: 'minimal' }),
+      client.checkScammer(QUERY, { source: 'SERVER', detail: 'full' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('are NOT collapsed across different locales', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER', detail: 'full', locale: 'en' }),
+      client.checkScammer(QUERY, { source: 'SERVER', detail: 'full', locale: 'id' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('are NOT collapsed across different identifiers', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(TraciveQuery.phone('+6281234567892'), { source: 'SERVER' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('release the latch once settled, so a later check still reaches the server', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+    ]);
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('release the latch after a failure too', async () => {
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(500, { code: 'server_error' }))
+      .always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    const results = await Promise.allSettled([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+    ]);
+    expect(results.every((entry) => entry.status === 'rejected')).toBe(true);
+
+    const later = await client.checkScammer(QUERY, { source: 'SERVER' });
+    expect(later.riskTier).toBe('HIGH');
+  });
+
+  it('leave a call that carries an AbortSignal on its own', async () => {
+    // Joining it to somebody else's flight would mean one caller's abort cancels another's
+    // check, or that an abort no longer stops the request at all. A caller who passes a signal
+    // asked for control of that request's lifetime; sharing takes it away.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER', signal: new AbortController().signal }),
+    ]);
+
+    expect(transport.requests).toHaveLength(2);
+  });
+});

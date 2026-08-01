@@ -3,6 +3,15 @@
 **A cache hit costs zero credits; every uncached repeat is a charge.** Read the rest of this page
 with that in mind — the cache is a billing feature that happens to also be faster.
 
+Overlapping checks are covered too, and not by the cache: a check that is already in flight is not
+sent a second time. Two `checkScammer` calls for the same identifier, at the same detail level and
+locale, that overlap in time collapse into one billable request and both receive its result. That
+covers the double-tapped button and the list screen that renders the same identifier twice — the
+cache alone cannot, because its write happens after both requests have already gone out.
+
+One case is deliberately excluded: a call that passes an `AbortSignal` runs on its own. Sharing it
+would mean one caller's abort cancelling another caller's check.
+
 ## The default is in-memory, and you should change it
 
 `TraciveClient` defaults to `InMemoryCheckCache`, so repeat checks within a session are free with

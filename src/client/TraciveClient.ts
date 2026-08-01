@@ -92,6 +92,11 @@ export class TraciveClient {
   readonly #transport: HttpTransport;
   readonly #clock: TraciveClock;
   readonly #onDiagnostic: DiagnosticSink | undefined;
+  /**
+   * Single-flight for checks, keyed on the folded record key plus the detail level and locale.
+   * See `#fetchCheck` for why this exists and what it deliberately does not cover.
+   */
+  readonly #inFlightChecks = new Map<string, Promise<CheckResult>>();
 
   constructor(options: TraciveClientOptions) {
     this.#mode = options.mode;
@@ -151,20 +156,20 @@ export class TraciveClient {
     if (source === 'CACHE_FIRST') {
       const cached = await this.#readCacheTolerantly(key);
       if (cached !== undefined) return cached;
-      const fresh = await this.#fetchCheck(query, options);
+      const fresh = await this.#fetchCheck(query, options, key);
       await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     }
 
     if (source === 'SERVER') {
-      const fresh = await this.#fetchCheck(query, options);
+      const fresh = await this.#fetchCheck(query, options, key);
       await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     }
 
     // SERVER_FIRST
     try {
-      const fresh = await this.#fetchCheck(query, options);
+      const fresh = await this.#fetchCheck(query, options, key);
       await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     } catch (error) {
@@ -287,7 +292,46 @@ export class TraciveClient {
     }
   }
 
-  async #fetchCheck(
+  /**
+   * Single-flight, because the cost of getting this wrong is money.
+   *
+   * Two overlapping checks for the same identifier both read the cache, both missed, both POSTed
+   * and both were charged — the cache write is the only serialisation point and it happens after
+   * both requests have already gone out. A double-tapped button, or a list screen rendering the
+   * same identifier in two cells, doubled the bill. `TraciveOAuth.refreshTokens` has had the
+   * correct shape all along; this is the same latch in the one place where the unit is currency.
+   *
+   * The key includes the detail level and the locale, not just the record key: a `minimal` result
+   * must never be handed back to a caller who asked for `full`. The assignment happens with no
+   * `await` between the lookup and the `set`, which is the whole point — otherwise two callers
+   * both observe an empty map and both start a flight.
+   *
+   * A call carrying an `AbortSignal` deliberately neither starts nor joins a shared flight. One
+   * caller's abort would otherwise cancel another caller's check, or — if the signal were dropped
+   * on the way in — an abort would stop stopping anything, spending the credit H2 exists to save.
+   * A caller who passes a signal has asked for control of that request's lifetime, and sharing
+   * takes it away.
+   */
+  #fetchCheck(
+    query: TraciveQuery,
+    options: CheckScammerOptions | undefined,
+    key: CheckCacheKey,
+  ): Promise<CheckResult> {
+    if (options?.signal !== undefined) return this.#sendCheck(query, options);
+
+    const detail: Detail = options?.detail ?? 'minimal';
+    const latchKey = `${key.hex}|${detail}|${options?.locale ?? ''}`;
+    const existing = this.#inFlightChecks.get(latchKey);
+    if (existing !== undefined) return existing;
+
+    const inFlight = this.#sendCheck(query, options).finally(() => {
+      this.#inFlightChecks.delete(latchKey);
+    });
+    this.#inFlightChecks.set(latchKey, inFlight);
+    return inFlight;
+  }
+
+  async #sendCheck(
     query: TraciveQuery,
     options: CheckScammerOptions | undefined,
   ): Promise<CheckResult> {
