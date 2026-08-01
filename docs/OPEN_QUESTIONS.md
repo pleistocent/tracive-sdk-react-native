@@ -127,31 +127,48 @@ The Tracive API is not live. Request and response field names follow the fixture
 that reconciling them against the real service is a one-file diff. No test in this repository
 contacts a real host, and none should.
 
-## 10. Expo Go caps adoption
+## 10. The record-key guard and a key containing a newline
+
+The fixture states the reserved-key rule as the regular expression `^__.*__$`, and
+`src/query/recordKeyGuard.ts` implements it as "at least four characters, starts with `__`, ends
+with `__`". Those agree on every input except one class: a key containing a newline. In JavaScript
+`.` does not match `\n` without the `s` flag, so the literal regex would ACCEPT `"__a\nb__"` while
+this SDK rejects it.
+
+The divergence errs toward a false local rejection, which costs an annoyed caller rather than a
+billed miss, and no fixture case covers it. **It has deliberately not been changed.** Which side is
+wrong depends on the server's actual implementation, which is not available to read here: if the
+server's rule is `[\s\S]`-equivalent — which a reserved-key check almost certainly should be —
+there is no divergence at all and the current code is right.
+
+Confirm against the server before 1.0. If the server really does use a newline-sensitive `.`,
+change the fixture first and all four SDKs together, not this file alone.
+
+## 11. Expo Go caps adoption
 
 Authorization cannot complete in Expo Go, and no packaging choice changes that. If a large share of
 target integrators are Expo-Go-only, that is a product question rather than an engineering one.
 
-## 11. `react-native-keychain` is quiet upstream
+## 12. `react-native-keychain` is quiet upstream
 
 It had not published for roughly sixteen months at the time of writing and carries a large open
 issue count. This is precisely why `TokenStore` is a port: if it stalls, the replacement is a
 hundred-line adapter, not the SDK. Prefer `expo-secure-store` as the documented default and
 re-evaluate the bare adapter before 1.0.
 
-## 12. Whether the bare SQL driver supports the old React Native architecture is unconfirmed
+## 13. Whether the bare SQL driver supports the old React Native architecture is unconfirmed
 
 Its documentation does not discuss it. Assume New-Architecture-only, and do not publish a
 compatibility table claiming otherwise.
 
-## 13. iOS cold-start Universal Link delivery has historically been unreliable
+## 14. iOS cold-start Universal Link delivery has historically been unreliable
 
 Community reports, not verified here. The one-slot result buffer and the persisted pending record
 mitigate the _consequences_, not the delivery itself. That is why "the link was not delivered to
 JavaScript on cold start" is the third named cause in the stale-pending diagnostic — the one case
 neither build-time tier can see explains itself on the second attempt instead of never.
 
-## 14. A transitive advisory in the Expo config-plugin toolchain
+## 15. A transitive advisory in the Expo config-plugin toolchain
 
 `npm audit` reports three moderate advisories, all one chain:
 `@expo/config-plugins -> xcode -> uuid` (a missing buffer bounds check in `uuid` v3/v5/v6 when a

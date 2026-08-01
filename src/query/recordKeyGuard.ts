@@ -75,6 +75,12 @@ export function isValidRecordKey(key: string): boolean {
   if (key.indexOf('/') !== -1) return false;
   if (key === '.' || key === '..') return false;
   // `^__.*__$` — note that `___` is NOT reserved but `____` is.
+  //
+  // Written as a length-and-affix test rather than as that literal regex, and the two differ on
+  // exactly one class of input: `.` does not match `\n` without the `s` flag, so the literal
+  // regex would ACCEPT `"__a\nb__"` where this rejects it. Erring toward a local rejection costs
+  // an annoyed caller, not a billed miss. Deliberately unresolved until the server's own rule can
+  // be read — see docs/OPEN_QUESTIONS.md, item 10.
   if (key.length >= 4 && key.startsWith('__') && key.endsWith('__')) return false;
   if (hasLoneSurrogate(key)) return false;
   if (utf8ByteLength(key) > MAX_RECORD_KEY_UTF8_BYTES) return false;
