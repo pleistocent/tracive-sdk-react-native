@@ -44,7 +44,7 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
 
 describe('shared grammar fixture', () => {
   it('is the version this suite was written against', () => {
-    expect(fixture.version).toBe(3);
+    expect(fixture.version).toBe(4);
   });
 
   it('carries the expected number of vectors and rejections', () => {
