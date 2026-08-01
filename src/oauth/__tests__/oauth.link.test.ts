@@ -216,6 +216,41 @@ describe('a pending store that rejects', () => {
     return { oauth, source };
   }
 
+  it('makes authorize return a failed result rather than rejecting', async () => {
+    // `authorize()` is typed `Promise<AuthResult | null>`; the presence probe and the launcher
+    // already convert their failures into a returned result, and the store write is the one
+    // remaining way for a raw error to escape.
+    const { oauth } = build();
+    const result = await oauth.authorize();
+    expect(result?.type).toBe('failed');
+  });
+
+  it('does not launch the authorize URL when the record could not be written', async () => {
+    // Launching without the record guarantees the redirect cannot be completed: the callback
+    // would find nothing to match its state against, so the user signs in for nothing.
+    const source = new ControllableLinkSource();
+    let launches = 0;
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport: new FakeTransport(),
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      linkSource: source,
+      pendingStore: new ThrowingPendingStore(),
+      presence: { isTraciveAppInstalled: () => Promise.resolve(true) },
+      launcher: {
+        openExternally: () => {
+          launches += 1;
+          return Promise.resolve(true);
+        },
+      },
+    });
+
+    const result = await oauth.authorize();
+    expect(result?.type).toBe('failed');
+    expect(launches).toBe(0);
+  });
+
   it('makes handleCallback return a failed result rather than rejecting', async () => {
     const { oauth } = build();
     const result = await oauth.handleCallback(REDIRECT);

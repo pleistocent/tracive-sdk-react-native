@@ -145,7 +145,20 @@ export class TraciveOAuth {
       return { type: 'appNotInstalled' };
     }
 
-    const previous = await this.#pendingStore.read();
+    let previous: PendingAuthorization | undefined;
+    try {
+      previous = await this.#pendingStore.read();
+    } catch {
+      // Not fatal here: a new record is about to be written over whatever was there. Worth a
+      // diagnostic, because a store that cannot be read usually cannot be written either, and
+      // the write below IS fatal.
+      this.#diagnose({
+        code: 'pending_authorization_read_failed',
+        severity: 'warning',
+        message: 'The previous authorization record could not be read.',
+        hint: 'The secure store rejected a read. A new record will be written over it.',
+      });
+    }
     if (previous !== undefined) {
       const ageSeconds = (this.#clock.nowMs() - previous.createdAtMs) / 1000;
       if (ageSeconds > this.#pendingMaxAgeSeconds) {
@@ -165,12 +178,33 @@ export class TraciveOAuth {
     const state = createState(this.#random);
 
     // Written BEFORE the URL is opened. If the process dies during the hop, the record survives.
-    await this.#pendingStore.write({
-      state,
-      codeVerifier: pkce.codeVerifier,
-      redirectUri: this.#config.redirectUri,
-      createdAtMs: this.#clock.nowMs(),
-    });
+    try {
+      await this.#pendingStore.write({
+        state,
+        codeVerifier: pkce.codeVerifier,
+        redirectUri: this.#config.redirectUri,
+        createdAtMs: this.#clock.nowMs(),
+      });
+    } catch (cause) {
+      // Fatal, and it must be caught BEFORE the launch. Opening the authorize URL without the
+      // record means the redirect can never be completed — the callback finds no state to match
+      // and no verifier to exchange — so the user would sign in for nothing. Returned rather
+      // than thrown because this method is typed `Promise<AuthResult | null>` and its two other
+      // failure modes, the presence probe and the launcher, are both returned.
+      return {
+        type: 'failed',
+        error:
+          cause instanceof TraciveError
+            ? cause
+            : new TraciveError({
+                kind: 'unknown',
+                message:
+                  'The pending authorization record could not be stored, so the flow was not ' +
+                  'started. The redirect could not have been completed without it.',
+                cause,
+              }),
+      };
+    }
 
     const url = buildAuthorizeUrl({
       config: this.#config,
