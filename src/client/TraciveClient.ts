@@ -276,8 +276,30 @@ export class TraciveClient {
     return this.#requireOAuth().onAuthResult(listener);
   }
 
-  signOut(): Promise<void> {
-    return this.#requireOAuth().signOut();
+  /**
+   * Revokes the grant best effort, clears the stored tokens, and empties the check cache.
+   *
+   * The cache goes too, and that is not housekeeping. Every row in it was fetched under the grant
+   * of the user who just signed out, and a cached verdict is readable without any credential at
+   * all — `source: 'CACHE'` never touches the network — so leaving them behind hands the next
+   * person to hold the device the departing user's check history, on a phone that now reports
+   * `isAuthorized() === false`.
+   *
+   * The client owns the clearing because the flow cannot do it. `TraciveOAuth` has no reference to
+   * a cache, and giving it one would be wrong rather than merely awkward: a `CheckCache` is an
+   * injected object, so two clients — a partner running one in each of two contexts — can be handed
+   * the same instance, and the flow has no way to know which of them a sign-out belongs to. Clearing
+   * from here empties that shared cache for the other client too, and that is the answer this SDK
+   * chooses on purpose: the rows are one user's answers about identifiers they looked up, and the
+   * cost of dropping them is that the other client pays for a re-check, while the cost of keeping
+   * them is that a signed-out user's history stays readable. Only one of those two is recoverable.
+   *
+   * A partner driving `TraciveOAuth` directly, rather than through this class, owns their own
+   * cache and has to clear it themselves — `TraciveOAuth.signOut()` cannot reach it.
+   */
+  async signOut(): Promise<void> {
+    await this.#requireOAuth().signOut();
+    await this.cache.clear();
   }
 
   isAuthorized(): Promise<boolean> {

@@ -234,6 +234,10 @@ all, and the browser only appears when the App Link is unverified — a configur
 - `signOut()` revokes the **refresh** token (revoking one access token would leave the grant alive
   and immediately re-issuable), then clears locally **regardless of what the server said** — a
   sign-out that fails because the network is down is not a sign-out any user would accept.
+- `TraciveClient.signOut()` empties the **check cache** as well. A cached verdict is readable with
+  no credential at all, so rows left behind are the departing user's check history on a device that
+  now reports `isAuthorized() === false`. `TraciveOAuth.signOut()` cannot do this — it holds no
+  cache — so a partner driving the flow directly has to call `clearCache()` themselves.
 
 ## Token expiry: one mechanism, not two
 

@@ -647,6 +647,12 @@ export class TraciveOAuth {
    * alive and immediately re-issuable, which is not what a user pressing "sign out" means.
    * Local state is cleared regardless of what the server said — a sign-out that fails because
    * the network is down is not a sign-out a user would accept.
+   *
+   * Scope note: this clears the GRANT, not the check cache. A `CheckCache` is not something this
+   * class holds or can reach. `TraciveClient.signOut()` clears both and is what a partner should
+   * call; anyone driving this class directly owns their cache and has to empty it themselves, or
+   * the departing user's verdicts stay readable on the device — a cached result needs no
+   * credential to read.
    */
   async signOut(): Promise<void> {
     const tokens = await this.#tokenStore.read();

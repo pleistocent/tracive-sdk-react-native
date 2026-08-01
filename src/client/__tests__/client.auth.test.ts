@@ -6,7 +6,7 @@ import {
   FakeTransport,
   jsonResponse,
 } from '../../__tests__/support/fakes';
-import { NoOpCheckCache } from '../../cache/CheckCache';
+import { InMemoryCheckCache, NoOpCheckCache } from '../../cache/CheckCache';
 import { TraciveMode } from '../../model/TraciveMode';
 import { InMemoryTokenStore } from '../../oauth/TokenStore';
 import { TraciveOAuth } from '../../oauth/TraciveOAuth';
@@ -241,6 +241,69 @@ describe('a 401 that carries no recognised code', () => {
       status: 401,
     });
     expect(transport.requests).toHaveLength(1);
+  });
+});
+
+/**
+ * A cached verdict is readable with no credential at all — `source: 'CACHE'` never touches the
+ * network — so a row left behind after a sign-out is the departing user's check history sitting on
+ * a device that now reports `isAuthorized() === false`.
+ */
+describe('signOut()', () => {
+  function buildWithCache(transport: FakeTransport): {
+    client: TraciveClient;
+    cache: InMemoryCheckCache;
+  } {
+    const clock = new FakeClock(CLOCK_START);
+    const cache = new InMemoryCheckCache({ clock });
+    const client = new TraciveClient({
+      mode: TraciveMode.oauth({
+        clientId: 'partner-app',
+        redirectUri: 'https://your.app/oauth/callback',
+      }),
+      transport,
+      clock,
+      cache,
+      retryPolicy: RetryPolicy.disabled,
+      tokenStore: new InMemoryTokenStore({
+        accessToken: 'the-access-token',
+        refreshToken: 'the-refresh-token',
+        tokenType: 'Bearer',
+        scopes: ['checks:read'],
+      }),
+    });
+    return { client, cache };
+  }
+
+  it('empties the check cache as well as the grant', async () => {
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(200, checkResponseBody()))
+      .enqueue(jsonResponse(200, {}));
+    const { client, cache } = buildWithCache(transport);
+
+    await client.checkScammer(QUERY, { source: 'CACHE_FIRST' });
+    expect(await cache.count()).toBe(1);
+
+    await client.signOut();
+
+    expect(await client.isAuthorized()).toBe(false);
+    expect(await cache.count()).toBe(0);
+    await expect(client.checkScammer(QUERY, { source: 'CACHE' })).rejects.toMatchObject({
+      kind: 'cacheMiss',
+    });
+  });
+
+  it('empties it even when the revocation call fails', async () => {
+    // Local state is cleared regardless of what the server said, and the cache is local state.
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(200, checkResponseBody()))
+      .enqueue(new Error('offline'));
+    const { client, cache } = buildWithCache(transport);
+
+    await client.checkScammer(QUERY, { source: 'CACHE_FIRST' });
+    await client.signOut();
+
+    expect(await cache.count()).toBe(0);
   });
 });
 
