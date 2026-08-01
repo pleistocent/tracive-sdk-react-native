@@ -42,8 +42,12 @@ export interface CheckResult {
  * identifies a check that a cache hit did not perform. `origin` is rewritten to `'CACHE'` so a
  * caller can always tell a replay from a fresh answer.
  *
- * If a future version ever caches full detail, the cache key must become
- * `(query, detail, locale)` — a `minimal` result must never satisfy a `full` request.
+ * What this projection cannot enforce for itself is the constraint that makes it safe to store at
+ * all: `tags` and `disclaimer` come back in the requested language, and the row key is the folded
+ * identifier alone with no locale in it. `TraciveClient.checkScammer` holds the other half of the
+ * rule — only a `minimal` result is ever written, and `minimal` is the one detail level that sends
+ * no locale. If a future version ever caches full detail, the cache key must become
+ * `(query, detail, locale)` first: a `minimal` result must never satisfy a `full` request.
  */
 export function toCacheableCopy(result: CheckResult): CheckResult {
   return {

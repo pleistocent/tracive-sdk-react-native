@@ -274,6 +274,23 @@ await client.checkScammer(query, { source: 'CACHE_FIRST' }); // default
 | `SERVER_FIRST` | Fetch; fall back to the cache only when the failure was transport-shaped. A 402 or a 403 is a real answer about your account and is never masked by a cached verdict.                   |
 | `CACHE`        | Cache only. A miss throws `cacheMiss`; a storage _fault_ surfaces as itself, because answering "no reports" when the truth is "the disk is broken" would be a fabricated clean verdict. |
 
+### `detail: 'full'` never touches the cache
+
+The table above describes `detail: 'minimal'`, which is the default and the **only** detail level
+that is cached. A stored row has no `topChronologies` and no `comments` — they are dropped on the
+way in, because free-text reports about third parties are not a partner app's data to hold — so
+serving one to a caller who asked for `full` would return both as `undefined`, which reads exactly
+like "the server answered in full and there is nothing on file". A wrong fraud answer, not a stale
+one, and a silent one.
+
+So for `detail: 'full'` the cache is skipped in all four places: `CACHE_FIRST` goes straight to the
+network, `CACHE` throws `cacheMiss` without reading anything, the response is not stored, and
+`SERVER_FIRST` surfaces the network error instead of degrading to a cached row. Two things follow
+for your bill and your offline behaviour: `full` then `minimal` on one identifier costs two credits
+rather than one, and a full-detail check with no network fails rather than returning a partial
+answer that looks complete. The Kotlin, Swift and Flutter SDKs behave identically. See
+[docs/caching.md](docs/caching.md) for the write side of the rule, which is about `locale`.
+
 ### Retrying costs money, so you have to ask
 
 ```ts

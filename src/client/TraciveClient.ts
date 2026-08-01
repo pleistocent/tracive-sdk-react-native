@@ -137,9 +137,52 @@ export class TraciveClient {
 
   async checkScammer(query: TraciveQuery, options?: CheckScammerOptions): Promise<CheckResult> {
     const source = options?.source ?? this.defaultSource;
+    const detail: Detail = options?.detail ?? 'minimal';
     const key = CheckCacheKey.fromQuery(query);
 
+    /**
+     * One flag gates every place the cache is touched — the `CACHE` read, the `CACHE_FIRST` read,
+     * all three writes and the `SERVER_FIRST` fallback — decided once here so that the read side
+     * and the write side of the rule cannot drift apart. Each is wrong for `full` detail for its
+     * own reason.
+     *
+     * The read is wrong because of `detail`. A stored row never carries `topChronologies` or
+     * `comments` — `toCacheableCopy` drops them — so serving one to a caller who asked for `full`
+     * hands back both fields as `undefined`, which is byte-identical to "the server answered in
+     * full and there is no narrative on file". A screen rendering "no incident reports" from that
+     * is showing a wrong fraud answer rather than a stale one, and it is silent: nothing throws,
+     * nothing is logged, and no request leaves the device.
+     *
+     * The write is wrong because of `locale`. The stored projection keeps `tags` and `disclaimer`,
+     * both of which come back in the requested language, and the row key is the folded identifier
+     * alone with no locale in it. Only a `full` request sends a locale. Storing its projection
+     * would file localised text under a locale-less key, and the very next `minimal` check — which
+     * sends no locale at all — would read it straight back as if it were the default. `disclaimer`
+     * is the one string this SDK asks every integrator to put on screen.
+     *
+     * The fallback is wrong because falling back trades freshness for an answer. For `minimal`
+     * that trade is sound: a risk tier is the same fact an hour later. There is no stale version
+     * of narrative content, only a missing one that renders as an empty one.
+     *
+     * The alternative design — keying rows by `(query, detail, locale)` — was deliberately not
+     * taken. It is a larger contract change for no gain, because a `full` row could only ever be
+     * served to a caller who wanted the very content it is not allowed to keep, and the Kotlin,
+     * Swift and Flutter SDKs all carry this same gate. The test is `=== 'minimal'` rather than
+     * `!== 'full'` so that a third detail level, if one is ever added, does not silently start
+     * being cached.
+     */
+    const cacheApplies = detail === 'minimal';
+
     if (source === 'CACHE') {
+      // This source is forbidden to call the network, and the cache holds nothing that answers a
+      // full-detail question, so the honest reply is the miss the caller already handles. The
+      // cache is not even consulted: a stored row is not a hit here.
+      if (!cacheApplies) {
+        throw new TraciveError({
+          kind: 'cacheMiss',
+          message: 'Only minimal-detail results are cached, and source was CACHE.',
+        });
+      }
       // A storage fault surfaces as itself here. Answering "no reports" when the truth is "the
       // disk is broken" would be a fabricated clean verdict, which is the single worst thing a
       // fraud SDK can do.
@@ -154,28 +197,31 @@ export class TraciveClient {
     }
 
     if (source === 'CACHE_FIRST') {
-      const cached = await this.#readCacheTolerantly(key);
-      if (cached !== undefined) return cached;
+      if (cacheApplies) {
+        const cached = await this.#readCacheTolerantly(key);
+        if (cached !== undefined) return cached;
+      }
       const fresh = await this.#fetchCheck(query, options, key);
-      await this.#writeCacheTolerantly(fresh, key);
+      if (cacheApplies) await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     }
 
     if (source === 'SERVER') {
       const fresh = await this.#fetchCheck(query, options, key);
-      await this.#writeCacheTolerantly(fresh, key);
+      if (cacheApplies) await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     }
 
     // SERVER_FIRST
     try {
       const fresh = await this.#fetchCheck(query, options, key);
-      await this.#writeCacheTolerantly(fresh, key);
+      if (cacheApplies) await this.#writeCacheTolerantly(fresh, key);
       return fresh;
     } catch (error) {
       // Fall back only when the failure was transport-shaped. A 402 or a 403 is a real answer
       // about the caller's account, and serving a cached verdict instead would hide a billing or
       // permission problem until it became someone else's incident.
+      if (!cacheApplies) throw error;
       if (!(error instanceof TraciveError) || !this.#isTransportShaped(error)) throw error;
       const cached = await this.#readCacheTolerantly(key);
       if (cached !== undefined) return cached;

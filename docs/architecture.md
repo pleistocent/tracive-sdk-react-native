@@ -201,22 +201,33 @@ A rejected identifier costs nothing; a sent one costs a credit whether it hits o
 order below is deliberate: reject locally, then try the cache, then collapse duplicates, and only
 then spend money.
 
+One flag, `cacheApplies`, sits between the cache key and the routing switch. It is
+`detail === 'minimal'`, decided once, and it gates every one of the four places the cache is
+touched: the `CACHE` read, the `CACHE_FIRST` read, all three writes, and the `SERVER_FIRST`
+fallback. `detail: 'full'` therefore neither reads the cache nor writes it. Why, in full, is under
+[What is never cached, and why](#what-is-never-cached-and-why).
+
 ```mermaid
 flowchart TD
   Build["a TraciveQuery factory folds the identifier"] --> Guard{"isValidRecordKey?"}
   Guard -->|"no"| Rejected["throw TraciveQueryError. Nothing was sent and nothing was billed."]
   Guard -->|"yes"| Call["client.checkScammer(query, options)"]
   Call --> Key["CheckCacheKey.fromQuery, the SHA-256 of searchQueryIndex"]
-  Key --> Source{"source"}
+  Key --> Gate["cacheApplies = the effective detail is minimal"]
+  Gate --> Source{"source"}
 
-  Source -->|"CACHE"| Only{"cache.read"}
+  Source -->|"CACHE"| CacheOnly{"cacheApplies?"}
+  CacheOnly -->|"no"| CacheMiss["throw TraciveError cacheMiss"]
+  CacheOnly -->|"yes"| Only{"cache.read"}
   Only -->|"fresh hit"| Hit["return the CheckResult, origin CACHE"]
-  Only -->|"miss"| CacheMiss["throw TraciveError cacheMiss"]
+  Only -->|"miss"| CacheMiss
   Only -->|"storage fault"| Surface["the CheckCacheError surfaces as itself"]
 
-  Source -->|"CACHE_FIRST"| Tolerant{"cache.read, with a fault caught"}
+  Source -->|"CACHE_FIRST"| First{"cacheApplies?"}
+  First -->|"no"| Flight{"was an AbortSignal passed?"}
+  First -->|"yes"| Tolerant{"cache.read, with a fault caught"}
   Tolerant -->|"fresh hit"| Hit
-  Tolerant -->|"miss, or a fault reported as cache_read_failed"| Flight{"was an AbortSignal passed?"}
+  Tolerant -->|"miss, or a fault reported as cache_read_failed"| Flight
 
   Source -->|"SERVER or SERVER_FIRST"| Flight
   Flight -->|"yes"| Attempt["one attempt"]
@@ -228,7 +239,7 @@ flowchart TD
   Abort -->|"no"| Send["POST /scammer-checks with searchQueryIndex, detail and locale"]
   Send --> Outcome{"response"}
 
-  Outcome -->|"2xx"| Ttl{"cache enabled and effective TTL above zero?"}
+  Outcome -->|"2xx"| Ttl{"cacheApplies, cache enabled, and effective TTL above zero?"}
   Outcome -->|"401 that is neither grantRevoked nor invalidToken"| Renew["refreshTokens once, then re-attempt"]
   Renew --> Attempt
   Outcome -->|"any other 4xx, including 402 and 403"| Fail["throw TraciveError"]
@@ -240,12 +251,12 @@ flowchart TD
   Ttl -->|"no"| Return["return the CheckResult, origin SERVER"]
   Ttl -->|"yes"| Store["toCacheableCopy, then seal and store"]
   Store --> Return
-  Fail -->|"only when source is SERVER_FIRST and the error is transport-shaped"| Fallback["read the cache, return a hit, otherwise rethrow"]
+  Fail -->|"only when source is SERVER_FIRST, cacheApplies, and the error is transport-shaped"| Fallback["read the cache, return a hit, otherwise rethrow"]
 ```
 
 "Transport-shaped" is exact: error kind `network`, `rateLimited` or `server`, or any status of 500
 and above. A 402 or a 403 is a real answer about your account and is never masked by a cached
-verdict.
+verdict. `cacheApplies` is the second condition on that same fallback, and both have to hold.
 
 ### Retrying costs money, so you have to ask
 
@@ -272,8 +283,8 @@ would mean one caller's abort cancelling another caller's check.
 
 ### What is never cached, and why
 
-Only a 2xx result is ever written. Errors are not cached, and `toCacheableCopy` drops four fields
-before anything is stored:
+Only a 2xx result at `detail: 'minimal'` is ever written. Errors are not cached, and
+`toCacheableCopy` drops four fields before anything is stored:
 
 | Dropped           | Why                                                                         |
 | ----------------- | --------------------------------------------------------------------------- |
@@ -286,6 +297,40 @@ before anything is stored:
 effective TTL of zero or less means the entry is never stored at all: "immediately stale" is the
 only safe reading of a nonsense value, because the alternative arithmetic makes an entry eternally
 fresh.
+
+That first table is exactly why `cacheApplies` exists, and each of the three things it gates is
+wrong for `detail: 'full'` for its own reason:
+
+- **The read is wrong because of `detail`.** A stored row has no `topChronologies` and no
+  `comments`, so answering a full-detail check from it hands both back as `undefined` — which is
+  byte-identical to "the server answered in full and there is no narrative on file". A screen
+  rendering "no incident reports" from that is showing a wrong fraud answer rather than a stale one,
+  and it is silent: nothing throws, nothing is logged, and no request leaves the device.
+- **The write is wrong because of `locale`.** The stored projection keeps `tags` and `disclaimer`,
+  both of which come back in the requested language, and the row key is the folded identifier alone
+  with no locale in it. Only a `full` request sends a locale. Storing its projection would file
+  localised text under a locale-less key, and the very next `minimal` check — which sends no locale
+  at all — would read it straight back as if it were the default. `disclaimer` is the one string
+  this SDK asks every integrator to put on screen. Gating only the read would not have helped: the
+  row is spoiled on the way in, by the `full` call, and collected later by a `minimal` call that is
+  reading the cache quite legitimately.
+- **The fallback is wrong because falling back trades freshness for an answer.** For `minimal` that
+  trade is sound: a risk tier is the same fact an hour later. There is no stale version of narrative
+  content, only a missing one that renders as an empty one, so a full-detail check that fails on the
+  network surfaces the failure and lets you decide whether to retry, degrade the UI, or ask for
+  `minimal` explicitly.
+
+The alternative design is to key rows by `(query, detail, locale)`. It was deliberately not taken:
+it is a larger contract change for no gain, because a full-detail row could only ever be served to a
+caller who wanted the very content it is not allowed to keep. The Kotlin, Swift and Flutter SDKs
+carry the identical gate, so the four surfaces stay 1:1. The predicate is written as
+`detail === 'minimal'` rather than `detail !== 'full'` so that a third detail level, if one is ever
+added, does not silently start being cached.
+
+Two consequences to plan for. A full-detail check is never served free from the cache, and it no
+longer warms it — so `full` then `minimal` on one identifier costs two credits rather than one. And
+a full-detail check offline now fails rather than returning a partial answer that looks complete.
+`minimal` routing, which is the default, is untouched in every respect.
 
 A failed cache **write** never fails a check that already succeeded. It emits a `cache_write_failed`
 diagnostic, costs one credit next time, and nothing more.
@@ -353,10 +398,10 @@ flowchart TD
 
 Notes that are easy to get wrong, and that the shared fixture pins:
 
-- **NFC is not applied everywhere.** It is applied to e-mail addresses, handles and every *code*
+- **NFC is not applied everywhere.** It is applied to e-mail addresses, handles and every _code_
   field — the platform code, the chain code and the bank code. It is **not** applied to bank account
   ids, crypto addresses or phone numbers.
-- **The bank account fold has no separate trim step.** Uppercasing happens *before* the strip.
+- **The bank account fold has no separate trim step.** Uppercasing happens _before_ the strip.
 - **An EVM address is lowercased; a base58 one is not.** Lowercasing a base58 address yields a
   different and invalid address. The lowercase `0x` prefix in the EVM test is load-bearing, so
   `0X...` is deliberately not folded.
@@ -368,7 +413,7 @@ Notes that are easy to get wrong, and that the shared fixture pins:
 - **`\D` is ASCII-only in JavaScript**, so an Arabic-Indic digit in a phone number is stripped,
   never converted.
 
-`isValidRecordKey` mirrors the server's own rule on the *folded* key, because case mapping is not
+`isValidRecordKey` mirrors the server's own rule on the _folded_ key, because case mapping is not
 length-preserving. It rejects: the empty string, anything containing `/`, exactly `.`, exactly `..`,
 anything matching `^__.*__$`, anything holding a lone surrogate, and anything over 1500 UTF-8 bytes.
 Spaces, an interior `.`, `@`, `+`, `#`, `$`, `[`, `]`, `*`, `~`, emoji, `__x`, `x__` and a bare `_`
@@ -379,7 +424,7 @@ though the module is named for what it guards.
 
 ### The engine guards
 
-Two facilities the fold depends on can be missing *silently*. A JavaScript engine built without a
+Two facilities the fold depends on can be missing _silently_. A JavaScript engine built without a
 real Unicode backend can implement `String.prototype.normalize` as a function that returns its input
 unchanged and raises no error, and the same reduced backend degrades `toUpperCase`/`toLowerCase` to
 the ASCII range. Either produces a key the server can never match — and a miss is billed exactly
@@ -397,7 +442,7 @@ on both platforms. The guards have not been exercised on a real device in this r
 
 JavaScript objects serialise by default, so a single `console.log`, a Reactotron dump or one
 crash-reporter breadcrumb is all it takes to print a live credential. The sibling SDKs had to opt
-*in* to leaking this; JavaScript leaks unless you opt *out*.
+_in_ to leaking this; JavaScript leaks unless you opt _out_.
 
 Every credential-bearing object this SDK hands out therefore carries **both** a redacting `toJSON`
 and a redacting `toString`, both non-enumerable so they do not widen the public shape. Redacting
@@ -416,7 +461,7 @@ flowchart LR
 
 The values are still there for the code that needs them: the transport reads the real
 `Authorization` header, `key.hex` still reaches the store, and `result.code` is still readable by
-the caller who asked for it. Only the *serialisations* are redacted.
+the caller who asked for it. Only the _serialisations_ are redacted.
 
 Two consequences worth stating plainly:
 

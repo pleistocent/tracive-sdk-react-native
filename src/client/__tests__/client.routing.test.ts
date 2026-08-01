@@ -225,6 +225,136 @@ describe('CACHE', () => {
   });
 });
 
+/**
+ * The cache stores only the fields that do not vary with `detail`, so a stored row has no
+ * `topChronologies` and no `comments`. Serving one to a caller who asked for `full` handed both
+ * back as `undefined` — byte-identical to "the server answered in full and there is no narrative on
+ * file" — with nothing thrown, nothing logged and no request leaving the device. The write side was
+ * wrong for a second reason: the projection keeps the localised `tags` and `disclaimer` under a
+ * locale-less key, and only a `full` request carries a locale.
+ */
+describe('full detail and the cache', () => {
+  const FULL_BODY = checkResponseBody({
+    topChronologies: [
+      {
+        chronology: 'Asked for a deposit, then went quiet.',
+        riskLevel: 3,
+        incidentDate: 'May 2026',
+      },
+    ],
+    comments: [{ date: '2026-05-04', text: 'Same story here.', fromCredibleReport: true }],
+  });
+
+  it('goes to the server under CACHE_FIRST even when a minimal result is cached', async () => {
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(200, checkResponseBody()))
+      .enqueue(jsonResponse(200, FULL_BODY));
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'CACHE_FIRST', detail: 'minimal' });
+    expect(transport.requests).toHaveLength(1);
+
+    const full = await client.checkScammer(QUERY, { source: 'CACHE_FIRST', detail: 'full' });
+    expect(transport.requests).toHaveLength(2);
+    expect(full.origin).toBe('SERVER');
+    expect(full.topChronologies).toHaveLength(1);
+    expect(full.comments).toHaveLength(1);
+  });
+
+  it('throws cacheMiss under CACHE even when a row is sitting there', async () => {
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport().enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'SERVER', detail: 'minimal' });
+    expect(await cache.read(KEY)).toBeDefined();
+
+    await expect(
+      client.checkScammer(QUERY, { source: 'CACHE', detail: 'full' }),
+    ).rejects.toMatchObject({ kind: 'cacheMiss' });
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('does not even read the cache under CACHE, so a storage fault cannot surface', async () => {
+    // `CACHE` is the one source that lets a fault surface as itself rather than degrading to a
+    // miss. A faulting store therefore distinguishes "the read was skipped" from "the read
+    // happened and returned nothing": skipping it yields cacheMiss, performing it yields the
+    // CheckCacheError.
+    const store = new FakeCheckCacheStore();
+    store.failNext = new Error('disk on fire');
+    const cache = new PersistentCheckCache({
+      store,
+      keyStore: new InMemoryCacheKeyStore({ random: fixedRandom() }),
+      clock: new FakeClock(),
+      cipher: new AesGcmCacheCipher({ dataKey: new Uint8Array(32), random: fixedRandom() }),
+    });
+    const { client } = build({ cache });
+
+    await expect(
+      client.checkScammer(QUERY, { source: 'CACHE', detail: 'full' }),
+    ).rejects.toMatchObject({ kind: 'cacheMiss' });
+    expect(cache.lastStoreError).toBeUndefined();
+  });
+
+  it('does not write a full response, so a later minimal check is not answered from it', async () => {
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(200, FULL_BODY))
+      .enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'SERVER', detail: 'full', locale: 'id-ID' });
+    expect(await cache.read(KEY)).toBeUndefined();
+
+    const later = await client.checkScammer(QUERY, { source: 'CACHE_FIRST' });
+    expect(later.origin).toBe('SERVER');
+    expect(transport.requests).toHaveLength(2);
+  });
+
+  it('does not write a full response under CACHE_FIRST either', async () => {
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport().enqueue(jsonResponse(200, FULL_BODY));
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'CACHE_FIRST', detail: 'full' });
+    expect(await cache.read(KEY)).toBeUndefined();
+  });
+
+  it('surfaces the network failure under SERVER_FIRST instead of degrading to a row', async () => {
+    // There is no stale version of narrative content, only a missing one that renders as an empty
+    // one, so a failed full check surfaces the failure and lets the caller decide what to do.
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const seeding = new FakeTransport().enqueue(jsonResponse(200, checkResponseBody()));
+    const seeded = build({ transport: seeding, cache, clock });
+    await seeded.client.checkScammer(QUERY, { source: 'SERVER' });
+    expect(await cache.read(KEY)).toBeDefined();
+
+    const transport = new FakeTransport().enqueue(jsonResponse(503, { code: 'server_error' }));
+    const { client } = build({ transport, cache, clock });
+    await expect(
+      client.checkScammer(QUERY, { source: 'SERVER_FIRST', detail: 'full' }),
+    ).rejects.toMatchObject({ kind: 'server' });
+  });
+
+  it('leaves minimal routing exactly as it was', async () => {
+    const clock = new FakeClock();
+    const cache = new InMemoryCheckCache({ clock });
+    const transport = new FakeTransport().enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport, cache, clock });
+
+    await client.checkScammer(QUERY, { source: 'CACHE_FIRST', detail: 'minimal' });
+    const second = await client.checkScammer(QUERY, { source: 'CACHE_FIRST', detail: 'minimal' });
+    expect(second.origin).toBe('CACHE');
+    expect(transport.requests).toHaveLength(1);
+  });
+});
+
 describe('the request itself', () => {
   it('sends the folded lookup key and no API key, in any mode', async () => {
     const transport = new FakeTransport().enqueue(jsonResponse(200, checkResponseBody()));

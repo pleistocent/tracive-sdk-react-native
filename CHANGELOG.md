@@ -23,6 +23,41 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **`detail: 'full'` used the cache, and was wrong in both directions.** It now neither reads it nor
+  writes it. Two independent defects, one rule.
+
+  _The read._ The cache stores only the fields that do not vary with `detail`, so `topChronologies`
+  and `comments` are dropped on the way in — but the read path never consulted `detail`. A `full`
+  request on the default `CACHE_FIRST` source was answered from that stripped row, with both fields
+  `undefined` and no network call. `undefined` there is byte-identical to "the server answered in
+  full and there are no incidents on file", so a partner screen could tell someone about to send
+  money that an identifier with a dozen reports against it has no narrative on file. That is a wrong
+  fraud answer rather than a caching subtlety: it is silent, it is on the default source, and the
+  content it drops is exactly the narrative a person reads before deciding.
+
+  _The write._ The stored projection keeps `tags` and `disclaimer`, and the row key carries no
+  locale — while a `full` request is the only kind that sends one. Storing its projection filed
+  localised text under a locale-less key, and the next `minimal` check, which sends no locale, read
+  it straight back as if it were the default. `disclaimer` is the one string this SDK asks every
+  integrator to display, so the result was a legal notice rendered in a language the user never
+  asked for. Gating only the read would not have helped: the row is spoiled on the way in, by the
+  `full` call, and collected later by a `minimal` call that is reading the cache quite legitimately.
+
+  A single `cacheApplies` flag, `detail === 'minimal'`, is decided once per check and gates all four
+  places the cache is touched, so the read side and the write side of the rule cannot drift apart.
+  `CACHE_FIRST` skips the read, `CACHE` throws `cacheMiss` without reading anything, `SERVER_FIRST`
+  surfaces the network error instead of degrading to a row, and none of them stores the response.
+  The alternative — keying rows by `(query, detail, locale)` — was deliberately not taken: it is a
+  larger contract change for no gain, because a full-detail row could only ever be served to a caller
+  who wanted the very content it is not allowed to keep, and the Kotlin, Swift and Flutter SDKs all
+  carry this same gate. The predicate is `=== 'minimal'` rather than `!== 'full'` so a third detail
+  level, if one is ever added, does not silently start being cached.
+
+  `minimal` routing is untouched and nothing in the public surface changed. Three behaviours to plan
+  for: a `full` request is never served free from the cache; it no longer warms the cache, so `full`
+  then `minimal` on one identifier costs two credits rather than one; and a `full` request with no
+  network now fails rather than returning a partial answer that looks complete.
+
 - **`TraciveQuery.email` rejects a value with no `@`, so a doomed lookup is no longer billed.** It
   previously rejected only an empty value, so `email('budi')` built `EMAIL_budi` and sent it. The
   server applies no shape validation to an e-mail — that is a legal record key, so it is looked up,

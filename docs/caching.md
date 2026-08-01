@@ -106,8 +106,24 @@ The first two are free-text reports about third parties and do not belong in a p
 database. `billing` describes one transaction and would be a lie if replayed. `checkId` identifies a
 check that a cache hit did not perform.
 
-Only `detail: 'minimal'` results are cached. If a future version ever caches full detail, the cache
-key must become `(query, detail, locale)` — a minimal result must never satisfy a full request.
+**Only `detail: 'minimal'` results are cached, and the rule is enforced on both sides.** A single
+`cacheApplies` flag — `detail === 'minimal'`, decided once per check — gates the `CACHE` read, the
+`CACHE_FIRST` read, every write and the `SERVER_FIRST` fallback, so the read side and the write side
+cannot drift apart.
+
+Reading a stored row for a full-detail check would return `topChronologies` and `comments` as
+`undefined`, which is indistinguishable from "the server answered in full and there is nothing on
+file" — a wrong fraud answer rather than a stale one, and a silent one. Writing one would be worse
+still: the projection keeps `tags` and `disclaimer` in the language the `full` request asked for,
+under a key that carries no locale, and the next `minimal` check sends no locale and would read that
+text straight back.
+
+So a full-detail check is never served from the cache, never warms it, and never degrades to a
+cached row when the network fails. `full` then `minimal` on one identifier costs two credits rather
+than one, and a full-detail check offline fails instead of returning a partial answer that looks
+complete. If a future version ever caches full detail, the cache key must become
+`(query, detail, locale)` first — a minimal result must never satisfy a full request. The Kotlin,
+Swift and Flutter SDKs carry the identical gate.
 
 ## Encryption
 
@@ -143,6 +159,7 @@ The distinction is load-bearing, and `source` decides who sees it:
 - `CACHE_FIRST` treats a fault as a miss and goes to the server. You pay a credit; nothing is wrong.
 - `CACHE` lets the fault **surface as itself**. Answering "no reports found" when the truth is "the
   disk is broken" would be a fabricated clean verdict, which is the single worst thing a fraud SDK
-  can do.
+  can do. At `detail: 'full'` there is no fault to surface, because the read never happens: that
+  combination is a `cacheMiss` before the store is consulted.
 - A failed cache **write** never fails a check that already succeeded. It costs one credit next
   time, and nothing more.
