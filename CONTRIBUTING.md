@@ -23,9 +23,10 @@ strings or commit messages — may name any of the following:
 
 Say **"the Tracive API"** or **"the server"**. Say **"record key"**. Say **"phase 1" / "phase 2"**.
 
-The single allowed exception is the Android application id `com.pleistocent.tracive` (and
-`com.pleistocent.tracive.dev` for the sandbox build), which the app-presence check genuinely needs,
-plus this repository's own GitHub path.
+The single allowed exception is the Android application id `com.pleistocent.tracive`, which the
+app-presence check genuinely needs, plus this repository's own GitHub path. No other application
+id belongs here — a non-production variant appears nowhere in shipping code, so naming one only
+discloses that it exists.
 
 `npm run hygiene` enforces this, and it enforces the same thing in CI as it does on your machine.
 

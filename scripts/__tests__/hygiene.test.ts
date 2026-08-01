@@ -85,6 +85,20 @@ describe('the public-hygiene check', () => {
     expect(status).toBe(1);
   });
 
+  it('allows the Android application id but not an id built on top of it', () => {
+    // The suffix is assembled rather than written out: a non-production application id appears
+    // nowhere in shipping code, so spelling one here would disclose that it exists — which is
+    // the very thing this rule is for. The allowance used to be a plain substring, and a
+    // substring allowance is also a prefix allowance.
+    const allowed = 'com.pleistocent.tracive';
+    expect(runInTemporaryTree({ 'notes.md': `package ${allowed}\n` }).status).toBe(0);
+
+    const variant = `${allowed}.${'sandbox'}`;
+    const { status, output } = runInTemporaryTree({ 'notes.md': `package ${variant}\n` });
+    expect(output).toContain('organisation_token');
+    expect(status).toBe(1);
+  });
+
   it('still fails on the built-in shape rules', () => {
     const { status } = runInTemporaryTree({ 'notes.md': probeFor('backend_commit_sha') });
     expect(status).toBe(1);

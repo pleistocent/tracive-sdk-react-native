@@ -59,11 +59,16 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 // The one allowed exception, and the only permitted matches for the org token.
-const ALLOWED_PLEISTOCENT_LITERALS = [
-  'com.pleistocent.tracive.dev',
-  'com.pleistocent.tracive',
-  'github.com/pleistocent/tracive-sdk-react-native',
-  'pleistocent/tracive-sdk-react-native',
+//
+// Matched as patterns with a trailing lookahead rather than as plain substrings, because a
+// substring allowance is also a PREFIX allowance: allowing `com.pleistocent.tracive` as a
+// substring silently allowed every id built on top of it, including non-production variants that
+// appear nowhere in shipping code and whose only effect here would be to disclose that they
+// exist. The repository path carries an optional `.git`, which package.json's clone URL has.
+const ALLOWED_PLEISTOCENT_PATTERNS = [
+  /com\.pleistocent\.tracive(?![A-Za-z0-9._-])/g,
+  /github\.com\/pleistocent\/tracive-sdk-react-native(\.git)?(?![A-Za-z0-9._-])/g,
+  /pleistocent\/tracive-sdk-react-native(?![A-Za-z0-9._-])/g,
 ];
 
 const RULES = [
@@ -196,8 +201,9 @@ function walk(directory, files = []) {
 
 function checkPleistocent(line) {
   let remaining = line;
-  for (const allowed of ALLOWED_PLEISTOCENT_LITERALS) {
-    remaining = remaining.split(allowed).join('');
+  for (const allowed of ALLOWED_PLEISTOCENT_PATTERNS) {
+    allowed.lastIndex = 0;
+    remaining = remaining.replace(allowed, '');
   }
   return /pleistocent/i.test(remaining);
 }
@@ -236,8 +242,8 @@ for (const path of walk(ROOT)) {
         line: index + 1,
         code: 'organisation_token',
         detail:
-          'the organisation token appears outside its allowed literals ' +
-          `(${ALLOWED_PLEISTOCENT_LITERALS.join(', ')})`,
+          'the organisation token appears outside its allowed forms: the Android application id, ' +
+          "and this repository's own GitHub path",
       });
     }
   });
