@@ -8,7 +8,73 @@ import {
 
 import { TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
 
-const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
+export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
+
+const VIEW_ACTION = 'android.intent.action.VIEW';
+
+interface AndroidAttributes {
+  $?: Record<string, string>;
+}
+
+interface ManifestIntent {
+  action?: AndroidAttributes[];
+  data?: AndroidAttributes[];
+}
+
+interface QueriesElement {
+  package?: AndroidAttributes[];
+  intent?: ManifestIntent[];
+}
+
+/**
+ * Adds Tracive's package-visibility entries to the manifest's `<queries>` block WITHOUT
+ * discarding what is already there.
+ *
+ * This used to be a straight assignment, which silently dropped every entry declared by the
+ * host's own app.json or by any plugin that ran earlier — expo-image-picker,
+ * expo-intent-launcher, react-native-share and so on. The symptom of losing one is nasty to
+ * trace: `canOpenURL` starts answering `false` for the OTHER library, which reports its own
+ * feature as unavailable, nothing points back here, and whether it happens at all depends on
+ * plugin order.
+ *
+ * Everything is merged into a single `<queries>` element, because a manifest carries one;
+ * appending a second block would be a different bug wearing a merge's clothes. Exported so the
+ * merge is testable on its own — the plugin as a whole needs a real prebuild to exercise.
+ */
+export function mergeTraciveQueries(manifest: { queries?: unknown[] }): void {
+  const queries = (manifest.queries ?? []) as QueriesElement[];
+  const target: QueriesElement = queries[0] ?? {};
+  if (queries.length === 0) queries.push(target);
+
+  // The <package> entry backs the presence probe by package id.
+  const packages = target.package ?? [];
+  const declared = packages.some(
+    (entry) => entry.$?.['android:name'] === TRACIVE_ANDROID_PACKAGE,
+  );
+  if (!declared) packages.push({ $: { 'android:name': TRACIVE_ANDROID_PACKAGE } });
+  target.package = packages;
+
+  // The scheme <intent> entries keep canOpenURL from rejecting outright on API 30+.
+  const intents = target.intent ?? [];
+  for (const scheme of [TRACIVE_APP_SCHEME, 'https']) {
+    // Matched on action AND scheme: visibility is granted per matching intent, so somebody
+    // else's SEND entry for the same scheme does not cover a VIEW lookup.
+    const covered = intents.some(
+      (intent) =>
+        intent.action?.some((action) => action.$?.['android:name'] === VIEW_ACTION) === true &&
+        intent.data?.some((data) => data.$?.['android:scheme'] === scheme) === true,
+    );
+    if (!covered) {
+      intents.push({
+        action: [{ $: { 'android:name': VIEW_ACTION } }],
+        data: [{ $: { 'android:scheme': scheme } }],
+      });
+    }
+  }
+  target.intent = intents;
+
+  manifest.queries = queries;
+}
 
 export interface TracivePluginProps {
   /**
@@ -73,23 +139,7 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
       application?: unknown[];
     };
 
-    // Both forms are needed: the <package> entry for the presence probe by package id, and the
-    // scheme <intent> so canOpenURL does not reject on API 30+.
-    manifest.queries = [
-      {
-        package: [{ $: { 'android:name': TRACIVE_ANDROID_PACKAGE } }],
-        intent: [
-          {
-            action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
-            data: [{ $: { 'android:scheme': TRACIVE_APP_SCHEME } }],
-          },
-          {
-            action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
-            data: [{ $: { 'android:scheme': 'https' } }],
-          },
-        ],
-      },
-    ];
+    mergeTraciveQueries(manifest);
 
     const activity = AndroidConfig.Manifest.getMainActivityOrThrow(modConfig.modResults);
     // A stacked second activity instance would otherwise start a fresh task and never see the
@@ -104,7 +154,7 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
     if (!alreadyPresent) {
       filters.push({
         $: { 'android:autoVerify': 'true' },
-        action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
+        action: [{ $: { 'android:name': VIEW_ACTION } }],
         category: [
           { $: { 'android:name': 'android.intent.category.DEFAULT' } },
           { $: { 'android:name': 'android.intent.category.BROWSABLE' } },

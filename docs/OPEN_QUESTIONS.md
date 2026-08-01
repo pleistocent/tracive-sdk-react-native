@@ -36,8 +36,10 @@ No `example/` directory exists, so:
 - `npx tracive-doctor` has never been run against a real generated project. Its checks are unit
   tested against realistic manifest, plist and entitlements fixtures on disk, including the
   merged-manifest preference, but not against output from a real `expo prebuild`;
-- the Expo config plugin has **never been executed**. It is written against the real
-  `@expo/config-plugins` types and typechecks, and that is all that can be said for it.
+- the Expo config plugin has **never been executed end to end**. It is written against the real
+  `@expo/config-plugins` types and typechecks. Its `<queries>` merge is now unit tested directly
+  against manifest fragments, including one seeded with another plugin's entries, but nothing here
+  has run a real `expo prebuild`.
 
 ## 3. The adapter subpaths are unexercised, and typed against hand-written declarations
 
