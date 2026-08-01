@@ -130,6 +130,13 @@ describe('single-flight refresh', () => {
   });
 });
 
+/**
+ * Renewal is reactive only: the stored token goes out, and the server's 401 is what triggers a
+ * refresh. There is deliberately no proactive check against `expiresAt` — the 401 path is
+ * mandatory anyway, a second mechanism for one job would leave the mandatory one unexercised, and
+ * an expiry judged against a device clock the SDK does not own refreshes on every call whenever
+ * that clock runs fast.
+ */
 describe('ensureAccessToken', () => {
   it('returns the stored token while it is still valid', async () => {
     const clock = new FakeClock();
@@ -150,11 +157,9 @@ describe('ensureAccessToken', () => {
     expect(transport.requests).toHaveLength(0);
   });
 
-  it('refreshes an expired token before returning one', async () => {
+  it('returns an ALREADY-EXPIRED stored token rather than pre-emptively refreshing it', async () => {
     const clock = new FakeClock();
-    const transport = new FakeTransport().always(
-      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
-    );
+    const transport = new FakeTransport();
     const oauth = new TraciveOAuth({
       mode: CONFIG,
       transport,
@@ -167,17 +172,15 @@ describe('ensureAccessToken', () => {
         scopes: [],
       }),
     });
-    expect(await oauth.ensureAccessToken()).toBe('renewed');
+    expect(await oauth.ensureAccessToken()).toBe('expired');
+    expect(transport.requests).toHaveLength(0);
   });
 
-  it('refreshes a token that is about to expire, rather than spending a round trip on it', async () => {
-    // Device clocks drift, and a token with a few seconds of life left is sent, 401s, and costs
-    // a round trip to discover what was already knowable. The 401 path recovers it, but the
-    // leeway is free.
+  it('returns a token expiring in a moment rather than treating the boundary as expired', async () => {
+    // What the old 30-second leeway existed for. It is gone: the server decides, and it decides
+    // with a clock that is actually authoritative.
     const clock = new FakeClock();
-    const transport = new FakeTransport().always(
-      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
-    );
+    const transport = new FakeTransport();
     const oauth = new TraciveOAuth({
       mode: CONFIG,
       transport,
@@ -190,7 +193,8 @@ describe('ensureAccessToken', () => {
         scopes: [],
       }),
     });
-    expect(await oauth.ensureAccessToken()).toBe('renewed');
+    expect(await oauth.ensureAccessToken()).toBe('about-to-expire');
+    expect(transport.requests).toHaveLength(0);
   });
 
   it('throws when no grant is stored at all', async () => {
@@ -200,5 +204,47 @@ describe('ensureAccessToken', () => {
       clock: new FakeClock(),
     });
     await expect(oauth.ensureAccessToken()).rejects.toMatchObject({ kind: 'invalidToken' });
+  });
+
+  /**
+   * A blank access token beside a live refresh token is a different case from an expired one, and
+   * a different case again from no grant at all. `adoptTokens()` validates nothing, so a
+   * confidential client's backend response missing its access token lands here — and `Bearer `
+   * would be sent, refused, and cost a round trip to learn what is already known locally.
+   */
+  it('refreshes a blank access token instead of sending an empty bearer value', async () => {
+    const transport = new FakeTransport().always(
+      jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
+    );
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: '',
+        refreshToken: 'rt',
+        tokenType: 'Bearer',
+        scopes: [],
+      }),
+    });
+    expect(await oauth.ensureAccessToken()).toBe('renewed');
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.url).toContain('/oauth/token');
+  });
+
+  it('throws when the access token is blank and there is no refresh token to renew it', async () => {
+    const transport = new FakeTransport();
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: '',
+        tokenType: 'Bearer',
+        scopes: [],
+      }),
+    });
+    await expect(oauth.ensureAccessToken()).rejects.toMatchObject({ kind: 'invalidToken' });
+    expect(transport.requests).toHaveLength(0);
   });
 });

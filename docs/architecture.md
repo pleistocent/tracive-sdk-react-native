@@ -160,8 +160,23 @@ Details worth knowing, all from `src/oauth/`:
 
 ## C. Token lifecycle
 
-`ensureAccessToken()` runs before every request, and it is re-read on every retry pass, so a token
-that expires mid-retry is renewed rather than replayed.
+**Renewal is reactive, and only reactive.** `ensureAccessToken()` runs before every request, is
+re-read on every retry pass, and hands back the stored access token without ever looking at its
+expiry. What renews a token is the server answering 401.
+
+That is one mechanism rather than two, deliberately. The 401 path is mandatory whatever else the SDK
+does — a token can be revoked server-side, and one can expire between a local check and the send —
+so a proactive expiry check on top of it is a second mechanism for a job that already has one, and
+it is the redundant one that does the damage: it always wins first, so the mandatory path almost
+never runs in production and a bug in it sits there unexercised. The check also rested on a clock
+this SDK does not own; a device running ten minutes fast reads every token as expired and refreshes
+on every call, which against refresh-token rotation with reuse detection is a stream of rotations
+and a good way to get a grant revoked. The price of going without it is one wasted round trip per
+token lifetime, single-flighted so only one caller pays it, and an unbilled one, since
+authentication precedes billing and an invalid bearer token is refused before any credit is spent.
+
+`expiresAt` is still stored, still persisted and still on `TraciveTokens` for you to read. Nothing
+in the SDK acts on it.
 
 The single-flight latch is the part to understand. Two simultaneous refreshes with the same rotating
 refresh token look exactly like token reuse to an authorization server, and reuse detection revokes
@@ -172,9 +187,9 @@ and the assignment**, so two concurrent callers cannot both observe an empty lat
 flowchart TD
   Ensure["ensureAccessToken()"] --> Stored{"a grant in TokenStore?"}
   Stored -->|"no"| NoGrant["throw TraciveError invalidToken"]
-  Stored -->|"yes"| Expiry{"expiry minus the 30s leeway is in the past?"}
-  Expiry -->|"no"| Use["use the stored access token"]
-  Expiry -->|"yes"| Refresh["refreshTokens(staleAccessToken)"]
+  Stored -->|"yes"| Blank{"is the stored access token blank?"}
+  Blank -->|"no"| Use["send it. The stored expiry is never consulted."]
+  Blank -->|"yes"| Refresh["refreshTokens()"]
 
   Unauthorized["a 401 from any request"] --> Kind{"mapped error kind"}
   Kind -->|"grantRevoked"| Terminal["clearTokens() and throw. Terminal, nothing is retried."]
@@ -184,7 +199,7 @@ flowchart TD
   Refresh --> Latch{"is a refresh already in flight?"}
   Latch -->|"yes"| Join["return the SAME promise. Concurrent callers coalesce."]
   Latch -->|"no"| Start["assign the latch with no await, then refresh"]
-  Start --> Raced{"is the stored access token still the stale one?"}
+  Start --> Raced{"was a stale token named, and does the store still hold it?"}
   Raced -->|"no"| Already["another caller already refreshed. Return what they wrote."]
   Raced -->|"yes"| Post["POST /oauth/token, grant_type=refresh_token"]
   Post -->|"2xx"| Write["TokenStore.write(tokens)"]

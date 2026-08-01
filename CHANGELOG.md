@@ -159,6 +159,47 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Changed
 
+- **Token renewal is reactive only: the stored expiry no longer triggers a refresh.**
+  `ensureAccessToken()` hands back the stored access token without consulting `expiresAt`, and the
+  30-second expiry leeway that used to sit in front of it is gone. What renews a token is the server
+  answering 401 — one single-flight refresh and a replay, at most once per request, exactly as
+  before. All four Tracive SDKs are settling on this one strategy.
+
+  What you will observe: a request now goes out carrying a token that a local clock would have
+  called expired, and it is that request's 401 which triggers the refresh. So one extra round trip
+  per token lifetime, and three HTTP calls instead of two on the first check after a token dies —
+  the check, the token POST, the replayed check. It is single-flighted, so however many callers are
+  waiting only one pays for it, and it is **not billed**: authentication precedes billing and a dead
+  bearer token is refused before a credit is spent. No public API changed, and nothing an integrator
+  wrote needs changing.
+
+  The reason is that the reactive path is mandatory regardless. A token can be revoked server-side,
+  and one can expire between the local check and the send, so a proactive check can never replace
+  the 401 handling — only run in front of it. That makes it a second mechanism for one job, and the
+  redundant one is the costly half: it wins first every time, so the mandatory path almost never ran
+  against a real server. A cold start holding a grant that expired while the app was closed is the
+  case the leeway always swallowed, and it now has a test of its own; it passed, so this is
+  redundancy removed rather than a bug found.
+
+  The leeway also depended on a clock this SDK does not own. A device running ten minutes fast reads
+  every token as expired and refreshes on every single call — and against refresh-token rotation
+  with server-side reuse detection, a stream of rotations is not merely wasteful, it is how a grant
+  trips revocation and signs the user out. The number was undefended in any case: 30 seconds here
+  against 60 in the Flutter SDK, with no rationale written in either.
+
+  **`expiresAt` is unchanged and still populated** — returned by the exchange, persisted by both
+  adapter token stores, readable on `TraciveTokens`. Only the automatic behaviour is gone. Use it
+  for a session countdown, for your own re-authorization prompt, or to record how much life a grant
+  had; `oauth.refreshTokens()` renews on your trigger and shares the same single-flight latch, so it
+  coalesces with the request path rather than racing it into a double rotation.
+
+  One neighbouring case was tightened rather than removed, because the expiry check had been
+  covering part of it by accident. A stored grant whose **access token is blank** while its refresh
+  token is intact — reachable through `adoptTokens()`, which stores whatever a confidential client's
+  backend returned without validating it — now always refreshes instead of sending `Bearer ` to be
+  refused. It used to do that only when an expiry happened to be set and in the past. A grant that
+  is absent altogether still throws `invalidToken`, unchanged.
+
 - **A blank `installUrl` is refused instead of being quietly defaulted.** The constructor now
   throws `TraciveConfigurationError` with code `blank_install_url`. Nothing silently substituted the
   built-in install link before either, but a blank value survived as far as the URL builder, which

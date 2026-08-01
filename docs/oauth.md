@@ -198,10 +198,50 @@ all, and the browser only appears when the App Link is unverified — a configur
 - Token refresh is **single-flight**, with the latch assigned before any `await`. Two simultaneous
   refreshes with the same rotating refresh token look exactly like token reuse to an authorization
   server, and reuse detection revokes the grant.
+- Refresh is **reactive only** — the stored token is sent and the server's 401 is what renews it.
+  There is no proactive check against the stored expiry. See below.
 - `grant_revoked` is terminal: stored tokens are cleared and nothing is retried.
 - `signOut()` revokes the **refresh** token (revoking one access token would leave the grant alive
   and immediately re-issuable), then clears locally **regardless of what the server said** — a
   sign-out that fails because the network is down is not a sign-out any user would accept.
+
+## Token expiry: one mechanism, not two
+
+`ensureAccessToken()` hands back the stored access token and **never looks at its expiry**. What
+renews a token is the Tracive API answering 401: a 401 that is neither `grant_revoked` nor
+`invalid_token` produces one single-flight refresh and a replay of the request, at most once per
+request. All four Tracive SDKs behave this way.
+
+The reason is that the 401 path is mandatory whichever way you build the rest. A token can be
+revoked server-side at any moment, and one can expire in the gap between a local check and the send,
+so a proactive check cannot replace the reactive path — it can only run in front of it. That makes
+it a second mechanism for a job that already has one, and the redundant one is the expensive
+mistake: it wins first every time, so the mandatory path almost never runs against a real server and
+whatever is wrong with it stays hidden. A cold start with a grant that expired while the app was
+closed is precisely the case a leeway used to swallow.
+
+The second reason is the clock. A stored expiry can only be judged against the device's clock, which
+this SDK does not control and cannot correct. A device running ten minutes fast reads every token as
+already expired and refreshes on every single call; with refresh-token rotation and server-side
+reuse detection, a stream of rotations is not just wasted traffic — it is how a grant trips
+revocation and signs your user out.
+
+What it costs is one wasted round trip per token lifetime. It is single-flighted, so only one caller
+pays it however many are waiting, and it is **not billed**: authentication happens before billing,
+and a request carrying a dead bearer token is refused with a 401 before a credit is spent.
+
+**`expiresAt` is still there.** It is returned by the token exchange, persisted by both adapter
+token stores, and readable on `TraciveTokens`. Only the automatic behaviour is gone — nothing in the
+SDK reads the field. Use it to show a session countdown, to decide when to prompt for
+re-authorization on your own schedule, or to record how much life a grant had. If you want to renew
+on your own trigger, call `oauth.refreshTokens()`: it is the same single-flight latch the request
+path uses, so it coalesces with an in-progress refresh instead of racing it into a double rotation.
+
+One case is not about expiry and behaves differently: a stored grant whose **access token is blank**
+but whose refresh token is intact — reachable through `adoptTokens()`, which stores whatever your
+backend handed back without validating it. That refreshes rather than sending `Bearer ` to be
+refused. A grant that is missing entirely still throws `invalidToken` and tells you to call
+`authorize()`.
 
 ## Public and confidential clients
 

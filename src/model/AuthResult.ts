@@ -4,6 +4,20 @@ export interface TraciveTokens {
   readonly accessToken: string;
   readonly refreshToken?: string;
   readonly tokenType: string;
+  /**
+   * When the server said this access token stops working, or absent if it did not say.
+   *
+   * It is stored, persisted and handed back, and the SDK acts on it nowhere. Renewal is driven
+   * entirely by the server's 401: `ensureAccessToken()` sends the stored token, and a 401 that is
+   * neither `grant_revoked` nor `invalid_token` produces one single-flight refresh and a replay.
+   * A local expiry compared against a device clock the SDK does not own would be a second
+   * mechanism for that one job, and on a device running fast it refreshes on every call.
+   *
+   * It is yours to use: show a session countdown, decide when to prompt for re-authorization on
+   * your own schedule, or record how much life a grant had. Calling `refreshTokens()` off the back
+   * of it is supported — it is single-flight, so it coalesces with whatever the request path is
+   * already doing rather than racing it.
+   */
   readonly expiresAt?: Date;
   /** What was GRANTED, which may be narrower than what was requested. */
   readonly scopes: readonly string[];

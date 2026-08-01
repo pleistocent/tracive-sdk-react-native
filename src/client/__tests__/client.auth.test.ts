@@ -17,16 +17,23 @@ import { TraciveClient } from '../TraciveClient';
 const QUERY = TraciveQuery.phone('+6281234567891');
 const OTHER_QUERY = TraciveQuery.phone('+6281234567892');
 
-function build(transport: FakeTransport): {
+/** Stated rather than inherited from `FakeClock`, because one test below dates against it. */
+const CLOCK_START = 1_700_000_000_000;
+
+function build(
+  transport: FakeTransport,
+  options?: { expiresAt: Date },
+): {
   client: TraciveClient;
   oauth: TraciveOAuth;
   tokenStore: InMemoryTokenStore;
 } {
-  const clock = new FakeClock();
+  const clock = new FakeClock(CLOCK_START);
   const tokenStore = new InMemoryTokenStore({
     accessToken: 'stale-token',
     refreshToken: 'the-refresh-token',
     tokenType: 'Bearer',
+    ...(options?.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
     scopes: ['checks:read'],
   });
   const oauth = new TraciveOAuth({
@@ -55,6 +62,58 @@ const REFRESHED = jsonResponse(200, {
   token_type: 'Bearer',
   expires_in: 3600,
   scope: 'checks:read',
+});
+
+/**
+ * The scenario the old 30-second expiry leeway always pre-empted, and therefore the one that had
+ * never actually run: a cold start whose very first request carries a token that expired while the
+ * app was closed. Nothing has refreshed yet, so the reactive path is not a fallback here — it is
+ * the only mechanism, and it has to work on the first call rather than the second.
+ */
+describe('cold start with an already-expired stored token', () => {
+  it('sends the expired token, takes the 401, refreshes once and replays', async () => {
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(401, { code: 'expired_token' }))
+      .enqueue(REFRESHED)
+      .enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build(transport, {
+      // Expired an hour before this process started. A stored grant read back from a secure store
+      // after the app was killed looks exactly like this.
+      expiresAt: new Date(CLOCK_START - 3_600_000),
+    });
+
+    const result = await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    expect(result.riskTier).toBe('HIGH');
+    expect(transport.requests).toHaveLength(3);
+    // The first request is the check, carrying the expired token. Nothing pre-empted it, which is
+    // the whole point: the server, not a device clock, decides that the token is finished.
+    expect(transport.requests[0]?.url).toContain('/scammer-checks');
+    expect(transport.requests[0]?.headers.authorization).toBe('Bearer stale-token');
+    expect(transport.requests[1]?.url).toContain('/oauth/token');
+    expect(transport.requests[2]?.headers.authorization).toBe('Bearer fresh-token');
+  });
+
+  it('refreshes exactly once for two concurrent first calls', async () => {
+    // Two different identifiers, so neither the check latch nor the cache collapses them: both
+    // reach the network holding the same dead token and both 401. One rotation must come back,
+    // because two simultaneous rotations of the same refresh token are what reuse detection
+    // revokes a grant for — and a cold start is exactly when several screens fire at once.
+    const transport = new FakeTransport()
+      .enqueue(jsonResponse(401, { code: 'expired_token' }))
+      .enqueue(jsonResponse(401, { code: 'expired_token' }))
+      .enqueue(REFRESHED)
+      .always(jsonResponse(200, checkResponseBody()));
+    const { client } = build(transport, { expiresAt: new Date(CLOCK_START - 3_600_000) });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(OTHER_QUERY, { source: 'SERVER' }),
+    ]);
+
+    const refreshes = transport.requests.filter((request) => request.url.endsWith('/oauth/token'));
+    expect(refreshes).toHaveLength(1);
+  });
 });
 
 describe('401 expired_token', () => {

@@ -36,16 +36,6 @@ import { InMemoryTokenStore, type TokenStore } from './TokenStore';
 const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 
 /**
- * How far ahead of the stated expiry a token is treated as already expired.
- *
- * A token with a few seconds of life left is sent, rejected, and costs a round trip to learn
- * what the expiry already said. Device clocks also drift, and an expiry compared exactly against
- * a drifting clock is a coin toss near the boundary. Thirty seconds is short enough to waste no
- * meaningful token life and long enough to cover ordinary skew.
- */
-const EXPIRY_LEEWAY_MS = 30_000;
-
-/**
  * How long a pending authorization record stays usable.
  *
  * Ten minutes because that is the authorization code's own budget: RFC 6749 section 4.1.2 puts the
@@ -491,6 +481,29 @@ export class TraciveOAuth {
     };
   }
 
+  /**
+   * The stored access token, sent as it is. The stored expiry is NOT consulted.
+   *
+   * Renewal is driven by the server's answer and by nothing else: a 401 that is neither
+   * `grant_revoked` nor `invalid_token` triggers one single-flight refresh and a replay of the
+   * request. That path is mandatory whatever this method does — a token can be revoked
+   * server-side, and one can expire between a local check and the send — so a proactive check on
+   * top of it is a second mechanism doing one job. The redundant one is the more expensive
+   * mistake of the two, because it always wins first: the 401 path then almost never runs in
+   * production, and a bug in the mandatory mechanism sits there unexercised.
+   *
+   * It also rested on a clock this SDK does not own. A device running ten minutes fast reads
+   * every token as expired and refreshes on every single call; against refresh-token rotation
+   * with server-side reuse detection that is not merely wasteful, it is a stream of rotations,
+   * and a stream of rotations is how a grant trips revocation and signs the user out.
+   *
+   * What the reactive-only shape costs is one wasted round trip per token lifetime, single-flighted
+   * so only one caller pays it — and not a billed one, since authentication precedes billing and an
+   * invalid bearer token is answered with a 401 before any credit is spent.
+   *
+   * `expiresAt` is still stored, still persisted and still readable on `TraciveTokens`. Only the
+   * automatic behaviour is gone; see that field for what it is good for.
+   */
   async ensureAccessToken(): Promise<string> {
     const tokens = await this.#tokenStore.read();
     if (tokens === undefined) {
@@ -499,9 +512,15 @@ export class TraciveOAuth {
         message: 'No Tracive grant is stored. Call authorize() first.',
       });
     }
-    const expiresAt = tokens.expiresAt;
-    if (expiresAt !== undefined && expiresAt.getTime() - EXPIRY_LEEWAY_MS <= this.#clock.nowMs()) {
-      const refreshed = await this.refreshTokens({ staleAccessToken: tokens.accessToken });
+    // A stored grant holding a blank access token is NOT the same case as no grant at all: the
+    // refresh token beside it is the grant, and it is still good. The state is reachable through
+    // `adoptTokens()`, which stores whatever a confidential client's backend handed back and
+    // validates none of it, and from there into any persistent store, since `deserializeTokens`
+    // asks only that the field be a string. Sending `Bearer ` would spend a round trip to be told
+    // what is already known here. With no refresh token to spend, `refreshTokens()` throws
+    // `invalidToken`, which is the right answer for a grant that cannot be renewed.
+    if (tokens.accessToken === '') {
+      const refreshed = await this.refreshTokens({ staleAccessToken: '' });
       return refreshed.accessToken;
     }
     return tokens.accessToken;
