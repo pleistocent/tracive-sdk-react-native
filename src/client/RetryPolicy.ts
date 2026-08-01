@@ -9,6 +9,34 @@ export interface RetryPolicy {
   readonly respectsRetryAfter: boolean;
 }
 
+/**
+ * The defaults, and why each number is the number.
+ *
+ * They are the same in every Tracive SDK, which is the point of writing the reasoning down here:
+ * the values drifted apart once already because nothing recorded what any of them was for, and a
+ * number with no stated reason is one the next person is free to round off.
+ *
+ * - **`maxAttempts: 3`** — the first send plus two retries. A transient 5xx or 429 nearly always
+ *   clears inside a couple of seconds; a third consecutive failure is a signal rather than noise,
+ *   and further attempts only add load to a server that is already struggling. It is deliberately
+ *   small because on a check every attempt is a potential charge, which is also why the budget can
+ *   only be spent when the caller supplied an idempotency key.
+ * - **`multiplier: 2`** — plain exponential backoff. Smaller barely spaces the attempts out at
+ *   all; larger overshoots the window in which a transient fault actually clears, so the retry
+ *   arrives well after the server recovered.
+ * - **`initialBackoffSeconds: 0.5`** — long enough that the second attempt is not the first one
+ *   repeated straight back into the same momentary fault: a load-balancer failover, a cold
+ *   instance, a rate-limit bucket that refills on a sub-second tick. Short enough that a user
+ *   watching a spinner does not experience it as a stall.
+ * - **`jitter: 0.2`** — ±20%, applied symmetrically so the mean schedule is unchanged. Without it
+ *   every app that saw the same 503 retries in lockstep and rebuilds the spike that caused it.
+ *   Twenty per cent smears a fleet across the interval while keeping the delay predictable enough
+ *   for someone reading a log to recognise the schedule.
+ * - **`maxBackoffSeconds: 8`** — the ceiling. At these defaults it never binds, because the last
+ *   retry waits one second; it exists for a caller who raises `maxAttempts`, and caps the wait at
+ *   something a user will still sit through. A `Retry-After` from the server overrides it outright,
+ *   including upwards — see `backoffSecondsFor`.
+ */
 const DEFAULT_RETRY: RetryPolicy = {
   maxAttempts: 3,
   initialBackoffSeconds: 0.5,

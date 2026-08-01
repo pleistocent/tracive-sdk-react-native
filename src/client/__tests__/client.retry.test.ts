@@ -185,6 +185,36 @@ describe('Retry-After', () => {
   });
 });
 
+/**
+ * Pinned as a set, not one at a time, and pinned to the values every Tracive SDK uses. These
+ * numbers drifted apart across the SDKs once already, because nothing recorded what any of them
+ * was for; `RetryPolicy.ts` now carries the reasoning for each, and this is what stops the next
+ * change from being made quietly on one platform.
+ */
+describe('the default retry policy', () => {
+  it('is the shared set', () => {
+    expect(RetryPolicy.default).toEqual({
+      maxAttempts: 3,
+      initialBackoffSeconds: 0.5,
+      multiplier: 2,
+      maxBackoffSeconds: 8,
+      jitter: 0.2,
+      respectsRetryAfter: true,
+    });
+  });
+
+  it('never reaches its own ceiling at those values', () => {
+    // Three attempts means two waits, of 0.5s and 1s. `maxBackoffSeconds` is there for a caller
+    // who raises `maxAttempts`, and the schedule below is what it would then cap.
+    const noJitter = RetryPolicy.create({ jitter: 0 });
+    const waits = [2, RetryPolicy.default.maxAttempts].map((attempt) =>
+      backoffSecondsFor(noJitter, attempt, undefined, 0.5),
+    );
+    expect(waits).toEqual([0.5, 1]);
+    for (const wait of waits) expect(wait).toBeLessThan(RetryPolicy.default.maxBackoffSeconds);
+  });
+});
+
 describe('the backoff schedule', () => {
   it('is deterministic and exponential when jitter is zero', () => {
     const policy = RetryPolicy.create({ jitter: 0 });
