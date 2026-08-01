@@ -39,6 +39,18 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A whitespace-only `idempotencyKey` counted as a key you had chosen.** The two places that ask
+  "did the caller supply a key" — the header the request sends, and the single-flight latch key —
+  both tested for `''` alone, so `'   '` (a trimmed-to-nothing form field, a template that
+  interpolated to spaces) was treated as real. That gave the check a private latch no other check
+  could ever join, defeating the collapse the latch exists for, and put a blank-looking key on the
+  wire in place of a generated `sdk-<uuid>` a server-side log can attribute. Blank now means
+  whitespace-only as well as empty, in both places, so the two cannot disagree. Kotlin, Swift and
+  Flutter already read it this way.
+
+  The value you pass is still sent untouched, whitespace included: it is what the server
+  deduplicates on and what you recorded against the transaction.
+
 - **The single-flight latch on checks ignored your idempotency key, and overrode what it says.**
   The latch keyed on the folded record key, the detail level and the locale — three fields that
   describe the _query_. An idempotency key describes the _transaction_, so two concurrent checks
