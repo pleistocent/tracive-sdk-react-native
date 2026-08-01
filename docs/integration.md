@@ -168,9 +168,14 @@ default on both platforms, and an app that opts back into JSC is unaffected. `re
 and `react-native-macos` build Hermes against ICU and are fine too.
 
 The unsupported configuration is a Hermes built with its Unicode-lite backend, where `normalize` is
-an empty function that returns its input unchanged with no error. The SDK probes for this once and
-throws `TraciveConfigurationError('nfc_unavailable')` rather than folding every key wrongly and
-billing you for the misses. Do not attempt to detect that build any other way.
+an empty function that returns its input unchanged with no error. The same reduced backend also
+degrades `toUpperCase`/`toLowerCase` to the ASCII range, so `'É'.toLowerCase()` comes back
+unchanged and `'ß'.toUpperCase()` does not expand to `SS`. Both produce a lookup key the server
+cannot match, and a miss is billed exactly like a hit.
+
+The SDK probes for each of them once and throws `TraciveConfigurationError` — code
+`nfc_unavailable` or `case_mapping_unavailable` — rather than folding every key wrongly and billing
+you for the misses. Do not attempt to detect that build any other way.
 
 ### Expo Go
 

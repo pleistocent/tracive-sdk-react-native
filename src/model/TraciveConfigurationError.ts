@@ -7,6 +7,7 @@
  *
  * Known codes:
  * - `nfc_unavailable` — the JavaScript engine does not implement Unicode NFC normalization.
+ * - `case_mapping_unavailable` — the JavaScript engine case-maps ASCII only.
  * - `csprng_unavailable` — the runtime provides no cryptographically secure random source.
  * - `missing_query_declaration` — the Android `<queries>` block is absent.
  * - `missing_ios_query_scheme` — `LSApplicationQueriesSchemes` does not list the app scheme.

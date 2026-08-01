@@ -1,4 +1,4 @@
-import { normalizeNfc } from './nfc';
+import { foldedLowerCase, foldedUpperCase, normalizeNfc } from './nfc';
 import { TraciveQueryError } from './TraciveQueryError';
 
 /**
@@ -14,7 +14,10 @@ import { TraciveQueryError } from './TraciveQueryError';
  * - `\s` in a regex matches exactly that same set.
  * - `\D` / `[^0-9]` is ASCII-only, so an Arabic-Indic digit is STRIPPED, never converted.
  * - `toUpperCase()` / `toLowerCase()` are the locale-invariant full case mappings, which are
- *   length-changing (`ß` -> `SS`, `İ` -> `i` + U+0307).
+ *   length-changing (`ß` -> `SS`, `İ` -> `i` + U+0307). They are reached through
+ *   `foldedUpperCase`/`foldedLowerCase` rather than called directly, because an engine that
+ *   degrades `normalize` degrades these to ASCII-only in the same breath, and that variant is
+ *   just as silent — see `nfc.ts`.
  *
  * The single case-mapping rule that still applies: never `toLocaleUpperCase` /
  * `toLocaleLowerCase` / `localeCompare`. Those are locale-sensitive and break under the Turkish
@@ -42,13 +45,15 @@ export function foldPhone(value: string): string {
 
 /** NFC -> lowercase -> trim. */
 export function foldEmail(value: string): string {
-  const folded = normalizeNfc(value).toLowerCase().trim();
+  const folded = foldedLowerCase(normalizeNfc(value)).trim();
   if (folded === '') throw new TraciveQueryError('empty_value');
   return folded;
 }
 
 /** uppercase -> trim. Must be ISO 3166-1 alpha-3. */
 export function foldCountryAlpha3(value: string): string {
+  // Deliberately NOT guarded: the result must match /^[A-Z]{3}$/, so a degraded case mapping
+  // produces a loud `country_not_alpha3` rejection here rather than a silently wrong key.
   const folded = value.toUpperCase().trim();
   if (!ALPHA3.test(folded)) {
     // The server would up-convert alpha-2, but then the local cache key and the server key would
@@ -60,7 +65,7 @@ export function foldCountryAlpha3(value: string): string {
 
 /** NFC -> uppercase -> trim -> drop every `_`, because the record key is split on `_`. */
 export function foldBankCode(value: string): string {
-  const folded = normalizeNfc(value).toUpperCase().trim().replace(/_/g, '');
+  const folded = foldedUpperCase(normalizeNfc(value)).trim().replace(/_/g, '');
   if (folded === '') throw new TraciveQueryError('empty_bank_code');
   return folded;
 }
@@ -71,14 +76,14 @@ export function foldBankCode(value: string): string {
  * Underscores are kept — everything past the bank code is rejoined when the key is parsed.
  */
 export function foldBankAccount(value: string): string {
-  const folded = value.toUpperCase().replace(/[\s-]/g, '');
+  const folded = foldedUpperCase(value).replace(/[\s-]/g, '');
   if (folded === '') throw new TraciveQueryError('empty_account_id');
   return folded;
 }
 
 /** NFC -> uppercase -> trim. */
 export function foldChain(value: string): string {
-  const folded = normalizeNfc(value).toUpperCase().trim();
+  const folded = foldedUpperCase(normalizeNfc(value)).trim();
   if (folded === '') throw new TraciveQueryError('empty_chain');
   return folded;
 }
@@ -91,12 +96,14 @@ export function foldChain(value: string): string {
 export function foldCryptoAddress(value: string): string {
   const trimmed = value.trim();
   if (trimmed === '') throw new TraciveQueryError('empty_value');
+  // Deliberately NOT guarded: the branch is taken only for a string already proven to be ASCII
+  // hex, and ASCII case mapping is the one thing a reduced Unicode build still gets right.
   return EVM_ADDRESS.test(trimmed) ? trimmed.toLowerCase() : trimmed;
 }
 
 /** NFC -> uppercase -> trim. */
 export function foldPlatform(value: string): string {
-  const folded = normalizeNfc(value).toUpperCase().trim();
+  const folded = foldedUpperCase(normalizeNfc(value)).trim();
   if (folded === '') throw new TraciveQueryError('empty_value');
   return folded;
 }
@@ -106,7 +113,7 @@ export function foldPlatform(value: string): string {
  * would build a key that misses a report filed with the `@`.
  */
 export function foldHandle(value: string): string {
-  const folded = normalizeNfc(value).toLowerCase().trim();
+  const folded = foldedLowerCase(normalizeNfc(value)).trim();
   if (folded === '') throw new TraciveQueryError('empty_handle');
   return folded;
 }

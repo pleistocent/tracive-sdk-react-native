@@ -21,8 +21,10 @@ Consequences that remain unverified on a real device:
 - the locale-invariant case mappings `ß -> SS` and `İ -> i` + U+0307 on Android's `libcore`;
 - that the 25-code-point trim set and the ASCII-only `\D` class behave identically on Hermes.
 
-The `nfc_unavailable` guard converts the worst of these from a silent wrong answer into a loud
-throw, but a guard is not a measurement. **Building the on-device job is the highest-value next
+The `nfc_unavailable` and `case_mapping_unavailable` guards convert the first two of these from a
+silent wrong answer into a loud throw, but a guard is not a measurement. The trim set and the `\D`
+class remain unguarded, and deliberately so: neither can be probed without hard-coding the very
+table this SDK exists not to hand-write. **Building the on-device job is the highest-value next
 piece of work in this repository.**
 
 ## 2. The example app was not built either
