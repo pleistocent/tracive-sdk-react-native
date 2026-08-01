@@ -23,6 +23,19 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A forged redirect could cancel a consent the user was in the middle of.** A callback whose
+  `state` did not match erased the pending authorization record before returning `stateMismatch`.
+  Any app on the device can hand yours a URL, so that made one `openURL` from anywhere enough to
+  kill a live authorization: the user would finish consenting in the Tracive app, come back, and
+  find the attempt already abandoned with nothing to complete.
+
+  The record now survives a mismatch. The genuine redirect still completes it, and an attempt the
+  user really did abandon is erased by the ten-minute expiry rather than by whoever shouted last.
+  Nothing else about the mismatch changes — the state is still compared before `error` or `code` is
+  read, no exchange is attempted, and the result is still `stateMismatch`.
+
+  This matches the Kotlin, Swift and Flutter SDKs, which all keep the record for the same reason.
+
 - **The pending authorization record was documented as surviving process death, and by default it
   does not.** No behaviour changed here. What changed is that the limitation is now stated in every
   place the guarantee used to be claimed, including the 0.1.0 note above, which says the flow

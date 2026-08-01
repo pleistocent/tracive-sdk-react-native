@@ -356,7 +356,11 @@ export class TraciveOAuth {
     // must not be able to make the SDK act on its error message or its code.
     const returnedState = params.get('state') ?? '';
     if (!statesMatch(pending.state, returnedState)) {
-      await this.#clearPendingQuietly();
+      // The pending record is deliberately NOT cleared here. Any app on the device can hand yours a
+      // URL, so erasing on a mismatch would let a stray or hostile redirect cancel the consent the
+      // user is genuinely in the middle of, for the cost of one `openURL`. The attempt stays alive:
+      // the real redirect still completes it, and an abandoned one is erased by the ten-minute
+      // expiry above rather than by whoever shouted last.
       return {
         type: 'failed',
         error: new TraciveError({

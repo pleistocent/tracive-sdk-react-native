@@ -189,6 +189,11 @@ all, and the browser only appears when the App Link is unverified — a configur
 - `state` is 32 random bytes, compared without an early return, and compared **before** `error` or
   `code` are read — so a forged redirect cannot make the SDK act on its error message or exchange
   its code.
+- A **mismatch does not erase the pending record**. Any app on the device can hand yours a URL, so
+  erasing on a mismatch would let one `openURL` from anywhere cancel the consent the user is in the
+  middle of. The attempt stays alive for the genuine redirect; one the user really did abandon is
+  cleared by the expiry below instead. A redirect arriving when no attempt is in progress is still
+  terminal — there is nothing to protect.
 - A stale pending record (default max age **10 minutes**) is refused and produces the three-cause
   diagnostic described in [integration.md](integration.md). Ten because that is the authorization
   code's own budget — RFC 6749 puts the recommended maximum lifetime of a code at ten minutes — and

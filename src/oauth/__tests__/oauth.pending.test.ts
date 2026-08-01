@@ -310,12 +310,18 @@ describe('a terminal outcome clears the pending record', () => {
     expect(device.slot).toBeUndefined();
   });
 
-  it('clears it after a state mismatch', async () => {
+  it('KEEPS it after a state mismatch, so a forgery cannot cancel the attempt', async () => {
     const { oauth, device } = await launched();
-    // A forged redirect must not be able to leave a live verifier parked on the device either.
     expect((await oauth.handleCallback(redirect('code=abc', 'not-the-state'))).type).toBe('failed');
-    expect(device.slot).toBeUndefined();
+    expect(device.slot).toBeDefined();
   });
+
+  // This test used to assert the opposite, on the grounds that a forged redirect must not leave a
+  // live verifier parked on the device. The trade-off runs the other way. Any app can send that
+  // redirect, so erasing on it hands any app a one-call cancel button for a consent in progress —
+  // and the verifier is not parked any *longer* because of the forgery. It was already going to sit
+  // there for the ten minutes the user has to finish consenting, and the expiry above still ends it
+  // on time. A forgery that fails to shorten the window is not the same as one that extends it.
 
   it('clears it when the code is handed to a confidential client', async () => {
     const { oauth, transport, device, state } = await launched({ confidential: true });

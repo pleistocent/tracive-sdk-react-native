@@ -124,6 +124,39 @@ describe('state verification during the callback', () => {
     expect(transport.requests).toHaveLength(0);
   });
 
+  it('a forged redirect cannot cancel the authorization the user is in the middle of', async () => {
+    // Any app on the device can hand this one a URL. If a mismatched state erased the pending
+    // record, one `openURL` from anywhere would be enough to kill a consent in progress — and the
+    // user would come back from the Tracive app to a flow that had already given up.
+    const { oauth, transport, opened } = build();
+    transport.enqueue(
+      jsonResponse(200, {
+        access_token: 'at',
+        refresh_token: 'rt',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: 'checks:read',
+      }),
+    );
+
+    expect(await oauth.authorize()).toBeNull();
+    const state = parseCallbackParameters(opened[0] ?? '').get('state') ?? '';
+
+    const forged = await oauth.handleCallback(
+      'https://your.app/oauth/callback?state=forged&code=attacker-code',
+    );
+    expect(forged.type).toBe('failed');
+    if (forged.type === 'failed') expect(forged.error.kind).toBe('stateMismatch');
+    expect(transport.requests).toHaveLength(0);
+
+    // The genuine redirect still completes, because the attempt survived the forgery.
+    const real = await oauth.handleCallback(
+      `https://your.app/oauth/callback?code=the-code&state=${encodeURIComponent(state)}`,
+    );
+    expect(real.type).toBe('authorized');
+    expect(parseQueryParameters(transport.lastRequest?.body ?? '').get('code')).toBe('the-code');
+  });
+
   it('completes, and exchanges with the matching verifier, when the state matches', async () => {
     const { oauth, transport, opened } = build();
     transport.enqueue(
