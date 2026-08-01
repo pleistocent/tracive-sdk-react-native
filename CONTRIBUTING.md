@@ -27,10 +27,27 @@ The single allowed exception is the Android application id `com.pleistocent.trac
 `com.pleistocent.tracive.dev` for the sandbox build), which the app-presence check genuinely needs,
 plus this repository's own GitHub path.
 
-`npm run hygiene` enforces this. It checks shapes and categories rather than embedding a list of
-internal names, because a denylist of secrets committed to a public repository _is_ the disclosure.
-If you maintain a private literal list, drop it in an untracked `.hygiene-forbidden` file (one token
-or `/regex/` per line) and the script will pick it up.
+`npm run hygiene` enforces this, and it enforces the same thing in CI as it does on your machine.
+
+Its rules come from two tracked places: the shape rules inside `scripts/check-hygiene.js` (commit
+ids, infrastructure vendor names, collection-path shapes, the organisation token) and the term list
+in `scripts/hygiene-terms.txt`. That list is tracked on purpose. It used to be an untracked
+`.hygiene-forbidden`, which meant the forbidden-token category was empty on every CI run — a clean
+checkout cannot contain an untracked file — so the category advertised as catching internal
+repository names and server-side function names could never fire.
+
+Tracking it does not turn the denylist into the disclosure, because every entry names a shape, a
+public framework API, a file-layout convention or a dictionary word of a language. **If you find
+yourself wanting to write a real internal name into it, that name belongs in the private list
+instead**, and the fact that it cannot be written there is the design working.
+
+Before scanning, the script runs every rule against `scripts/hygiene-selftest.txt` and refuses to
+continue unless each one matches its own probe. Adding a rule without a probe fails the build; so
+does a rule that has quietly stopped matching anything.
+
+A private, environment-specific list may still be supplied in an untracked `.hygiene-forbidden`
+file, one token or `/regex/` per line. It is purely additive: it can only catch more, and its
+absence can no longer empty a category.
 
 ### One deliberate exception inside the code
 

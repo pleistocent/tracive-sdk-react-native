@@ -32,6 +32,9 @@ jobs:
       - run: npm run fixture:verify
 
       # This repository is published. Nothing may name an internal identifier — see CONTRIBUTING.md.
+      # The rules are shape rules plus a TRACKED term list (scripts/hygiene-terms.txt), so this
+      # step enforces the same thing here as it does locally. The script proves every rule still
+      # matches its own probe before it scans, so a category cannot quietly empty itself.
       - run: npm run hygiene
 
       - run: npm run typecheck

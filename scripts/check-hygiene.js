@@ -13,14 +13,33 @@
 // become the disclosure. The infrastructure-vendor list below deliberately names many vendors,
 // so it asserts nothing about which one is real.
 //
-// The internal literal list is applied by supplying it out of band: create an untracked
-// `.hygiene-forbidden` file, one case-insensitive token or /regex/ per line, and this script
-// picks it up. That keeps the private list private and still fails the build.
+// The literal term list lives in `scripts/hygiene-terms.txt`, which is TRACKED. It used to be an
+// untracked `.hygiene-forbidden`, and that made the `forbidden_token` category empty on every CI
+// run — a clean checkout cannot contain an untracked file — so the one category advertised as
+// catching internal repository names, design-doc titles and server-side function names could
+// never fire. A check that cannot fail is worse than no check, because it reads as coverage.
+//
+// Tracking it does not reintroduce the disclosure problem, because every entry names a shape, a
+// public framework API, a file-layout convention or a dictionary word. See the header of that
+// file. A private, environment-specific list may still be added out of band in an untracked
+// `.hygiene-forbidden`; it is purely additive and its absence can no longer empty a category.
+//
+// Before scanning anything, this script proves every rule can still fire, by running all of them
+// against `scripts/hygiene-selftest.txt` and refusing to continue if any rule matches nothing.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = process.cwd();
+const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
+const TERMS_PATH = join(SCRIPT_DIRECTORY, 'hygiene-terms.txt');
+const SELF_TEST_PATH = join(SCRIPT_DIRECTORY, 'hygiene-selftest.txt');
 const SELF = 'scripts/check-hygiene.js';
+// The two files whose whole purpose is to contain forbidden-looking text.
+const SCANNER_OWN_FILES = new Set([
+  'scripts/hygiene-terms.txt',
+  'scripts/hygiene-selftest.txt',
+]);
 
 const SKIP_DIRECTORIES = new Set(['node_modules', '.git', 'lib', 'coverage', 'android', 'ios']);
 const TEXT_EXTENSIONS = new Set([
@@ -74,10 +93,8 @@ const RULES = [
   },
 ];
 
-function loadExternalRules() {
-  const path = join(ROOT, '.hygiene-forbidden');
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8')
+function parseTermList(text, origin) {
+  return text
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '' && !line.startsWith('#'))
@@ -85,12 +102,76 @@ function loadExternalRules() {
       const asRegex = /^\/(.*)\/([a-z]*)$/.exec(line);
       return {
         code: 'forbidden_token',
+        source: `${origin}: ${line}`,
         pattern: asRegex
           ? new RegExp(asRegex[1], asRegex[2].includes('g') ? asRegex[2] : `${asRegex[2]}g`)
           : new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
         message: 'matches a forbidden internal token',
       };
     });
+}
+
+function loadTrackedTerms() {
+  if (!existsSync(TERMS_PATH)) {
+    console.error(
+      `check-hygiene: ${relative(ROOT, TERMS_PATH)} is missing. It is tracked precisely so that ` +
+        'the forbidden-token category cannot be silently empty; restore it rather than deleting ' +
+        'the step.',
+    );
+    process.exit(1);
+  }
+  const terms = parseTermList(readFileSync(TERMS_PATH, 'utf8'), 'hygiene-terms.txt');
+  if (terms.length === 0) {
+    console.error(
+      `check-hygiene: ${relative(ROOT, TERMS_PATH)} contains no entries, so the ` +
+        'forbidden-token category would pass everything.',
+    );
+    process.exit(1);
+  }
+  return terms;
+}
+
+/** Optional, untracked, purely additive. Absence is fine; it can no longer empty a category. */
+function loadPrivateTerms() {
+  const path = join(ROOT, '.hygiene-forbidden');
+  if (!existsSync(path)) return [];
+  return parseTermList(readFileSync(path, 'utf8'), '.hygiene-forbidden');
+}
+
+/**
+ * Every rule must match at least one line of the self-test corpus. A rule that matches nothing
+ * there is a rule that has stopped working — a mistyped regex, a category quietly emptied — and
+ * the whole point of this script is that such a thing must not pass as coverage.
+ */
+function proveEveryRuleCanFire(rules) {
+  if (!existsSync(SELF_TEST_PATH)) {
+    console.error(
+      `check-hygiene: ${relative(ROOT, SELF_TEST_PATH)} is missing, so no rule in this script ` +
+        'has been shown to detect anything.',
+    );
+    process.exit(1);
+  }
+  const corpus = readFileSync(SELF_TEST_PATH, 'utf8').split('\n');
+  const dead = [];
+
+  for (const rule of rules) {
+    const fired = corpus.some((line) => {
+      rule.pattern.lastIndex = 0;
+      return rule.pattern.test(line);
+    });
+    if (!fired) dead.push(rule.source ?? rule.code);
+  }
+  if (!corpus.some((line) => checkPleistocent(line))) dead.push('organisation_token');
+
+  if (dead.length > 0) {
+    console.error('check-hygiene: these rules matched nothing in the self-test corpus:\n');
+    for (const entry of dead) console.error(`  ${entry}`);
+    console.error(
+      `\nEither the rule is broken, or ${relative(ROOT, SELF_TEST_PATH)} is missing a probe for ` +
+        'it. A rule that cannot fire is not a check.',
+    );
+    process.exit(1);
+  }
 }
 
 function walk(directory, files = []) {
@@ -121,12 +202,19 @@ function checkPleistocent(line) {
   return /pleistocent/i.test(remaining);
 }
 
-const rules = [...RULES, ...loadExternalRules()];
+const rules = [
+  ...RULES.map((rule) => ({ ...rule, source: rule.code })),
+  ...loadTrackedTerms(),
+  ...loadPrivateTerms(),
+];
+proveEveryRuleCanFire(rules);
+
 const violations = [];
 
 for (const path of walk(ROOT)) {
   const relativePath = relative(ROOT, path);
   if (relativePath === SELF) continue; // this file quotes the patterns in order to state them
+  if (SCANNER_OWN_FILES.has(relativePath)) continue; // they exist to contain forbidden text
 
   const lines = readFileSync(path, 'utf8').split('\n');
   lines.forEach((line, index) => {
@@ -166,4 +254,4 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log('check-hygiene: clean.');
+console.log(`check-hygiene: clean (${rules.length} rules, each proven to fire).`);
