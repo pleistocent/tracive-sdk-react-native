@@ -79,8 +79,8 @@ The replaceable ports, in full: `HttpTransport`, `TraciveClock`, `TraciveRandom`
 There is no API key and no password prompt. Consent happens **in the Tracive app already installed
 on the device**, and the two hops are ordinary OS link launches through `AuthorizeLauncher` (which
 defaults to `Linking.openURL`). No WebView, no in-app browser tab and no web-authentication session
-appears anywhere in this flow — an in-app browser exists to *keep* a URL inside itself, and this
-flow needs the OS to *route away* to a claiming app. See [oauth.md](oauth.md) for the full
+appears anywhere in this flow — an in-app browser exists to _keep_ a URL inside itself, and this
+flow needs the OS to _route away_ to a claiming app. See [oauth.md](oauth.md) for the full
 rationale, and item 6 of [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for why that rationale is inherited
 doctrine rather than a measurement.
 
@@ -230,6 +230,11 @@ storage library and both adapters sit behind optional peer dependencies. Supply 
 A rejected identifier costs nothing; a sent one costs a credit whether it hits or misses. So the
 order below is deliberate: reject locally, then try the cache, then collapse duplicates, and only
 then spend money.
+
+The latch covers the network call only; each collapsed caller writes the answer to its own cache
+afterwards. Kotlin and Swift keep the write inside the flight instead. The observable behaviour is
+the same either way and the request count — the thing that is billed — is identical; the difference
+is N cache writes of an identical row rather than one.
 
 One flag, `cacheApplies`, sits between the cache key and the routing switch. It is
 `detail === 'minimal'`, decided once, and it gates every one of the four places the cache is

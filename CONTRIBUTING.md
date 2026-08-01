@@ -167,6 +167,17 @@ third does not spend its budget re-deriving them. Anything that differs across t
   `TraciveOAuth.#spentRefreshTokens` says what that costs (one re-consent after a rolled-back store)
   and why paying it beats writing dead refresh tokens to disk forever.
 
+- **The single-flight latch on checks covers different ground in each pair.** Kotlin and Swift keep
+  the cache write inside the flight, so a collapsed check is stored once; Flutter and React Native
+  latch the network call alone and let each caller write. The request count — the thing that is
+  billed — is identical, and so is what a caller observes.
+- **Kotlin's app-presence probe does not follow the environment; the other three do.** Its Android
+  half checks package visibility, and the sandbox build's application id may not be named in a
+  published repository (see the hygiene rule below). Both of its platform checkers take the target
+  as a parameter with the sandbox case documented, so a host testing against sandbox supplies it and
+  declares the matching `<queries>` entry in its own manifest. Auto-selecting on iOS but not Android
+  would be worse than not auto-selecting at all.
+
 - **The pending-authorization window is configurable here.** Kotlin and Swift keep theirs private.
   Both shapes are defensible and neither is drift: an integration spanning more than one SDK can set
   the number where it is offered, and cannot make the others disagree with their own constant.
