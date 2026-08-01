@@ -234,6 +234,13 @@ all, and the browser only appears when the App Link is unverified — a configur
 - `signOut()` revokes the **refresh** token (revoking one access token would leave the grant alive
   and immediately re-issuable), then clears locally **regardless of what the server said** — a
   sign-out that fails because the network is down is not a sign-out any user would accept.
+- A sign-out is **final even against work already on the wire.** Discarding credentials is
+  instantaneous and acquiring them is not, so a refresh or a code exchange that was in flight when
+  `signOut()` ran still completes — and its write would refill the store the sign-out just emptied,
+  leaving a live, freshly rotated refresh token on a device the user believes is signed out. Every
+  token write is conditional on the grant not having been dropped since that round trip began, and
+  the flight fails with `grantRevoked` instead. Awaiting the in-flight work inside `signOut()` is
+  not the alternative: it would make signing out wait on a network call.
 - `TraciveClient.signOut()` empties the **check cache** as well. A cached verdict is readable with
   no credential at all, so rows left behind are the departing user's check history on a device that
   now reports `isAuthorized() === false`. `TraciveOAuth.signOut()` cannot do this — it holds no

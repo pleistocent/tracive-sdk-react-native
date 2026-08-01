@@ -175,6 +175,24 @@ export class TraciveOAuth {
   #pendingAuthorizationId: string | undefined;
   #authorizationCounter = 0;
 
+  /**
+   * Moved every time the grant is deliberately dropped — {@link signOut}, {@link clearTokens}, and
+   * the `grantRevoked` discard inside a refresh.
+   *
+   * Every token write that follows a round trip is conditional on this being unchanged since that
+   * round trip began. Discarding a credential is instantaneous and acquiring one is not, so a
+   * refresh or a code exchange that was already on the wire when the user signed out still
+   * completes — and its write would refill the store that was just emptied, leaving a live and
+   * freshly rotated refresh token on a device the user believes is signed out, and may be about to
+   * hand over.
+   *
+   * Awaiting the in-flight work inside `signOut` is not the alternative: that would make signing
+   * out wait on a network call, which `signOut` deliberately refuses to do. Gating the write is
+   * what makes a sign-out both immediate and final. The check sits directly before the write with
+   * no `await` between them, so nothing can interleave in the gap.
+   */
+  #credentialEpoch = 0;
+
   constructor(options: TraciveOAuthOptions) {
     this.#config = options.mode;
     this.#environment = options.environment ?? TraciveEnvironment.production;
@@ -456,6 +474,10 @@ export class TraciveOAuth {
       });
     }
 
+    // Captured before the exchange goes out, for the same reason the refresh path captures it: a
+    // sign-out landing while the code is being exchanged has to win over the tokens that come
+    // back. Storing them would hand the user a live grant they had already asked to be rid of.
+    const epoch = this.#credentialEpoch;
     try {
       const tokens = await this.#exchange([
         ['grant_type', 'authorization_code'],
@@ -464,6 +486,20 @@ export class TraciveOAuth {
         ['client_id', this.#config.clientId],
         ['code_verifier', pending.codeVerifier],
       ]);
+      if (epoch !== this.#credentialEpoch) {
+        // `stateMismatch` is the kind this method already uses for every "there is no longer an
+        // attempt this redirect can complete" — no authorization in progress, a state that did not
+        // match, an attempt that expired. The grant being dropped mid-exchange is one more of
+        // those. `info.code` is what tells the three apart in a log.
+        return {
+          type: 'failed',
+          error: new TraciveError({
+            kind: 'stateMismatch',
+            message: 'The grant was dropped while the authorization was completing.',
+            info: { code: 'authorization_cancelled' },
+          }),
+        };
+      }
       await this.#tokenStore.write(tokens);
       return { type: 'authorized', grantedScopes: tokens.scopes };
     } catch (cause) {
@@ -627,7 +663,13 @@ export class TraciveOAuth {
   refreshTokens(options?: { staleAccessToken?: string }): Promise<TraciveTokens> {
     if (this.#inFlightRefresh !== null) return this.#inFlightRefresh;
     const inFlight = this.#doRefresh(options).finally(() => {
-      this.#inFlightRefresh = null;
+      // Only if this flight is still the one on the latch. `signOut` drops the latch so a caller
+      // arriving afterwards does not join a flight that can no longer write; without this test,
+      // that older flight's completion would then clear the latch belonging to the NEW flight, and
+      // a third caller would start a second one alongside it. Two simultaneous refreshes with the
+      // same rotating token look exactly like token reuse to a server, and reuse detection revokes
+      // the grant.
+      if (this.#inFlightRefresh === inFlight) this.#inFlightRefresh = null;
     });
     this.#inFlightRefresh = inFlight;
     return inFlight;
@@ -638,8 +680,12 @@ export class TraciveOAuth {
     await this.#tokenStore.write(redactedTokens(tokens));
   }
 
+  /**
+   * Drops the stored grant without contacting the server, and moves the credential epoch so that
+   * a token round trip already on the wire cannot put one back.
+   */
   async clearTokens(): Promise<void> {
-    await this.#tokenStore.clear();
+    await this.#discardCredentials();
   }
 
   /**
@@ -657,6 +703,15 @@ export class TraciveOAuth {
   async signOut(): Promise<void> {
     const tokens = await this.#tokenStore.read();
     const refreshToken = tokens?.refreshToken;
+
+    // Everything that invalidates the grant happens HERE, before the revoke round trip. The epoch
+    // move turns any token write already on the wire into a no-op, and the store is empty from
+    // this point even if the revoke below hangs, fails, or the process is killed during it.
+    // Clearing after the revoke instead left a live grant on the device for the whole duration of
+    // a network call the method does not even require to succeed.
+    await this.#discardCredentials();
+    await this.#clearPendingQuietly();
+
     if (refreshToken !== undefined) {
       try {
         // Redacted at the seam: the body carries the refresh token, which is the whole grant.
@@ -679,10 +734,6 @@ export class TraciveOAuth {
         // Best effort by design.
       }
     }
-    await this.#tokenStore.clear();
-    // Through the quiet clear, so a pending store that refuses the erase cannot turn a sign-out
-    // into a rejection after the tokens have already gone.
-    await this.#clearPendingQuietly();
   }
 
   /**
@@ -722,6 +773,20 @@ export class TraciveOAuth {
         'The operating system declined to open the install link. Present it yourself with ' +
         'installUrlForDisplay() so the user still has somewhere to go.',
     });
+  }
+
+  /**
+   * Throws away every credential this instance holds, and moves the epoch so that anything already
+   * on the wire cannot put one back.
+   *
+   * The latch goes with it. A caller arriving after this must not join a flight whose write is
+   * about to be refused — it would receive the refusal as its own answer, having asked for a
+   * refresh that could still have succeeded.
+   */
+  async #discardCredentials(): Promise<void> {
+    this.#credentialEpoch += 1;
+    this.#inFlightRefresh = null;
+    await this.#tokenStore.clear();
   }
 
   /**
@@ -797,22 +862,43 @@ export class TraciveOAuth {
       return current;
     }
 
+    const epoch = this.#credentialEpoch;
+    let tokens: TraciveTokens;
     try {
-      const tokens = await this.#exchange([
+      tokens = await this.#exchange([
         ['grant_type', 'refresh_token'],
         ['refresh_token', refreshToken],
         ['client_id', this.#config.clientId],
       ]);
-      await this.#tokenStore.write(tokens);
-      return tokens;
     } catch (error) {
       // `grant_revoked` is terminal: the grant is gone, so retrying can only produce more of the
-      // same. Clear locally so the app asks for authorization instead of looping.
+      // same. Discard locally so the app asks for authorization instead of looping — and move the
+      // epoch with it, so a second round trip already out cannot restore what the server just
+      // said is finished.
       if (error instanceof TraciveError && error.kind === 'grantRevoked') {
-        await this.#tokenStore.clear();
+        await this.#discardCredentials();
       }
       throw error;
     }
+
+    // Outside the `try` deliberately. Thrown inside it, this would fall into the branch above and
+    // discard a second time — dropping a latch that by then may belong to a NEWER flight, which is
+    // how two concurrent refreshes start.
+    if (epoch !== this.#credentialEpoch) {
+      // The grant was dropped while this round trip was in flight. Writing now would undo a
+      // sign-out the user has already been told succeeded, and would leave the ROTATED refresh
+      // token — the newest and longest-lived one — on a device the user believes is signed out.
+      // The refresh fails instead and the fresh pair is simply abandoned, which is what the
+      // server's own rotation already assumes for a token that is never used.
+      throw new TraciveError({
+        kind: 'grantRevoked',
+        message: 'The grant was dropped while the refresh was in flight.',
+        info: { code: 'grant_revoked' },
+      });
+    }
+
+    await this.#tokenStore.write(tokens);
+    return tokens;
   }
 
   async #exchange(fields: readonly (readonly [string, string])[]): Promise<TraciveTokens> {

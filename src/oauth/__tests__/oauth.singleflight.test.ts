@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import { FakeClock, FakeTransport, fixedRandom, jsonResponse } from '../../__tests__/support/fakes';
+import type { HttpRequest, HttpResponse, HttpTransport } from '../../client/HttpTransport';
 import type { OAuthConfiguration } from '../../model/TraciveMode';
 import { InMemoryTokenStore } from '../TokenStore';
 import { TraciveOAuth } from '../TraciveOAuth';
@@ -127,6 +128,116 @@ describe('single-flight refresh', () => {
       }),
     });
     await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+  });
+});
+
+/**
+ * A transport that holds its response until the test releases it, so a sign-out can be made to
+ * land in the middle of a token round trip. `FakeTransport` cannot express that: it always answers
+ * on the next microtask.
+ */
+class HeldTransport implements HttpTransport {
+  readonly requests: HttpRequest[] = [];
+  #release: ((response: HttpResponse) => void) | undefined;
+
+  send(request: HttpRequest): Promise<HttpResponse> {
+    this.requests.push(request);
+    if (this.#release !== undefined) return Promise.resolve(jsonResponse(200, {}));
+    return new Promise<HttpResponse>((resolve) => {
+      this.#release = resolve;
+    });
+  }
+
+  /** Resolves the request currently in flight. */
+  release(response: HttpResponse): void {
+    this.#release?.(response);
+  }
+}
+
+/**
+ * Discarding a credential is instantaneous; acquiring one is not. A token round trip that was
+ * already on the wire when the user signed out still completes, and its write would refill the
+ * store the sign-out just emptied — leaving a live, freshly rotated refresh token on a device the
+ * user believes is signed out and may be about to hand over.
+ */
+describe('a token round trip that outlives a sign-out', () => {
+  function build(): { oauth: TraciveOAuth; transport: HeldTransport } {
+    const transport = new HeldTransport();
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      random: fixedRandom(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: 'stale-access',
+        refreshToken: 'the-refresh-token',
+        tokenType: 'Bearer',
+        scopes: ['checks:read'],
+      }),
+    });
+    return { oauth, transport };
+  }
+
+  it('cannot write the rotated tokens back after signOut()', async () => {
+    const { oauth, transport } = build();
+
+    const refresh = oauth.refreshTokens();
+    await Promise.resolve();
+    expect(transport.requests).toHaveLength(1);
+
+    await oauth.signOut();
+    expect(await oauth.isAuthorized()).toBe(false);
+
+    // Only now does the server answer, with the newest and longest-lived refresh token there is.
+    transport.release(
+      jsonResponse(200, {
+        access_token: 'fresh-access',
+        refresh_token: 'rotated-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }),
+    );
+
+    await expect(refresh).rejects.toMatchObject({ kind: 'grantRevoked' });
+    expect(await oauth.isAuthorized()).toBe(false);
+    expect(await oauth.grantedScopes()).toEqual([]);
+  });
+
+  it('cannot write them back after clearTokens() either', async () => {
+    const { oauth, transport } = build();
+
+    const refresh = oauth.refreshTokens();
+    await Promise.resolve();
+    await oauth.clearTokens();
+
+    transport.release(
+      jsonResponse(200, {
+        access_token: 'fresh-access',
+        refresh_token: 'rotated',
+        token_type: 'Bearer',
+      }),
+    );
+
+    await expect(refresh).rejects.toMatchObject({ kind: 'grantRevoked' });
+    expect(await oauth.isAuthorized()).toBe(false);
+  });
+
+  it('does not hand a caller arriving after the sign-out the doomed flight', async () => {
+    // Joining it would answer that caller with a refusal earned by somebody else's timing, for a
+    // refresh that was never going to be allowed to write.
+    const { oauth, transport } = build();
+
+    const doomed = oauth.refreshTokens();
+    await Promise.resolve();
+    await oauth.signOut();
+
+    const later = oauth.refreshTokens();
+    expect(later).not.toBe(doomed);
+
+    transport.release(jsonResponse(200, { access_token: 'a', token_type: 'Bearer' }));
+    await expect(doomed).rejects.toMatchObject({ kind: 'grantRevoked' });
+    // Nothing is stored to refresh from any more, which is the honest answer for a signed-out app.
+    await expect(later).rejects.toMatchObject({ kind: 'invalidToken' });
   });
 });
 
