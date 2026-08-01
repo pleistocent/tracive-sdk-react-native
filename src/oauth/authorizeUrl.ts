@@ -49,7 +49,7 @@ export function parseCallbackParameters(url: string): Map<string, string> {
 
 export const TRACIVE_APP_SCHEME = 'tracive';
 export const APP_PRESENCE_PROBE_URL = 'tracive://authorize';
-export const DEFAULT_INSTALL_URL = 'https://tracive.chottu.link/app';
+export const DEFAULT_INSTALL_URL = 'https://tracive.chottu.link/install';
 
 export interface AuthorizeUrlInput {
   readonly config: OAuthConfiguration;
@@ -107,23 +107,36 @@ const OAUTH_PARAMETERS: readonly string[] = [
   'error_description',
 ];
 
-export const INSTALL_UTM_MEDIUM = 'tracive_sdk_react_native';
+export const INSTALL_UTM_SOURCE = 'tracive-sdk-react-native';
 
 /**
- * The install link carries no OAuth parameters at all — only attribution. There is deliberately
- * no deferred resume: a fresh PKCE pair is generated when the user comes back and retries, which
- * is both simpler and safer than parking a verifier on a public URL.
+ * Attribution parameters this SDK owns. They are rebuilt from the client id on every call, so any
+ * value already sitting on a configured install URL is replaced rather than duplicated — two
+ * `ref` parameters on one link is an ambiguity the link service would have to guess at.
  */
-export function buildInstallUrl(installUrl: string, clientId: string): string {
+const ATTRIBUTION_PARAMETERS: readonly string[] = ['ref', 'utm_source', 'utm_medium'];
+
+/**
+ * The install link carries no OAuth parameters at all — only attribution: `ref` is the partner's
+ * OAuth client id (never an end user's identifier) and `utm_source` names this SDK. Both are
+ * public, non-sensitive values, which is the whole point: the link is opened in a browser and
+ * transits a third-party link service before it ever reaches a store page.
+ *
+ * There is deliberately no deferred resume: a fresh PKCE pair is generated when the user comes
+ * back and retries, which is both simpler and safer than parking a verifier on a public URL.
+ */
+export function buildInstallUrl(installUrl: string, clientId: string | undefined): string {
   const { base, query, fragment } = splitUrl(installUrl);
   const kept: (readonly [string, string])[] = [];
   for (const [name, value] of parseQueryParameters(query)) {
     if (OAUTH_PARAMETERS.includes(name)) continue;
-    if (name === 'utm_source' || name === 'utm_medium') continue;
+    if (ATTRIBUTION_PARAMETERS.includes(name)) continue;
     kept.push([name, value]);
   }
-  kept.push(['utm_source', clientId]);
-  kept.push(['utm_medium', INSTALL_UTM_MEDIUM]);
+  if (clientId !== undefined && clientId !== '') {
+    kept.push(['ref', clientId]);
+  }
+  kept.push(['utm_source', INSTALL_UTM_SOURCE]);
   const rebuilt = `${base}?${encodeQuery(kept)}`;
   return fragment === '' ? rebuilt : `${rebuilt}#${fragment}`;
 }

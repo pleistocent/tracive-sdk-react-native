@@ -101,10 +101,22 @@ JavaScript a single breadcrumb would otherwise print a live authorization code.
 
 ## The install link
 
-When the app is absent, the install URL carries **attribution only** — `utm_source=<clientId>` and
-`utm_medium=tracive_sdk_react_native`. Any OAuth parameter already present on a configured install
-URL is **stripped, not trusted**: an install link is public, gets pasted, shortened and logged, and
-is no place for a verifier.
+When the app is absent, `authorize()` stops before any redirect and reports `appNotInstalled`, and
+`oauth.installUrlForDisplay()` gives you the link to open instead. It is
+`https://tracive.chottu.link/install` — the same base URL in all four Tracive SDKs — carrying
+**attribution only**:
 
-There is no deferred resume. A fresh PKCE pair is generated when the user comes back and retries,
-which is both simpler and safer than parking a verifier on a public URL.
+| Parameter    | Value                      | Notes                                                                                   |
+| ------------ | -------------------------- | --------------------------------------------------------------------------------------- |
+| `ref`        | your OAuth client id       | The **partner's** identifier, never an end user's. Omitted when the client id is empty. |
+| `utm_source` | `tracive-sdk-react-native` | Which SDK sent the user.                                                                |
+
+Both are optional and both are public, non-sensitive values. Any OAuth parameter already present on
+a configured install URL is **stripped, not trusted**, and so is any attribution the URL already
+carries — that is rebuilt rather than duplicated. An install link is public, gets pasted, shortened
+and logged, and it travels through a third-party link service on its way to a store page: it is no
+place for a verifier, a state value or a user identifier.
+
+There is no deferred resume. Nothing is parked on the link for the user to come back with: they
+install the app, return to your app and retry, and a fresh PKCE pair is generated then — which is
+both simpler and safer than parking a verifier on a public URL.

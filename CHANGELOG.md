@@ -11,6 +11,14 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The install link now points at the page that exists.** The default was
+  `https://tracive.chottu.link/app`, a guessed path: every partner's first un-onboarded user would
+  have followed a link that silently 404s at the one moment the SDK has nothing else to offer them.
+  It is `https://tracive.chottu.link/install`, matching the sibling SDKs. Its attribution also
+  matches them now — `ref=<your client id>` and `utm_source=tracive-sdk-react-native`, replacing the
+  previous `utm_source=<clientId>` / `utm_medium` pair — and a test pins the whole URL rather than
+  its host, so drift from the shared contract fails the build.
+
 - **The redaction layer is now actually applied.** `redactedProxyConfiguration`, `redactedRequest`
   and `redactedResponse` existed and were tested, and nothing in production called any of them.
   `JSON.stringify(client)` printed a partner's proxy authorization header verbatim, and the raw

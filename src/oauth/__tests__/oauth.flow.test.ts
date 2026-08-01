@@ -160,49 +160,87 @@ describe('authorize()', () => {
   });
 });
 
+/** Every OAuth parameter name that must never reach a third-party link service. */
+const FORBIDDEN_ON_THE_INSTALL_LINK = [
+  'code',
+  'state',
+  'code_challenge',
+  'code_challenge_method',
+  'code_verifier',
+  'client_id',
+  'client_secret',
+  'redirect_uri',
+  'response_type',
+  'scope',
+  'partner_user_id',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'nonce',
+  'api_key',
+];
+
 describe('the install URL', () => {
+  it('is the exact URL the sibling SDKs open, in full', () => {
+    expect(buildInstallUrl(DEFAULT_INSTALL_URL, 'partner-app')).toBe(
+      'https://tracive.chottu.link/install?ref=partner-app&utm_source=tracive-sdk-react-native',
+    );
+  });
+
   it('carries attribution and NO OAuth parameter', () => {
     const url = buildInstallUrl(DEFAULT_INSTALL_URL, 'partner-app');
     const params = parseQueryParameters(url.split('?')[1] ?? '');
-    expect(params.get('utm_source')).toBe('partner-app');
-    expect(params.get('utm_medium')).toBe('tracive_sdk_react_native');
-    for (const forbidden of [
-      'code',
-      'state',
-      'code_challenge',
-      'code_verifier',
-      'client_id',
-      'redirect_uri',
-      'access_token',
-      'refresh_token',
-      'api_key',
-    ]) {
+    // `ref` is the PARTNER's client id. It is never an end user's identifier.
+    expect(params.get('ref')).toBe('partner-app');
+    expect(params.get('utm_source')).toBe('tracive-sdk-react-native');
+    expect([...params.keys()].sort()).toEqual(['ref', 'utm_source']);
+    for (const forbidden of FORBIDDEN_ON_THE_INSTALL_LINK) {
       expect([...params.keys()]).not.toContain(forbidden);
     }
+  });
+
+  it('omits ref rather than sending an empty one', () => {
+    expect(buildInstallUrl(DEFAULT_INSTALL_URL, '')).toBe(
+      'https://tracive.chottu.link/install?utm_source=tracive-sdk-react-native',
+    );
+    expect(buildInstallUrl(DEFAULT_INSTALL_URL, undefined)).toBe(
+      'https://tracive.chottu.link/install?utm_source=tracive-sdk-react-native',
+    );
   });
 
   it('strips OAuth parameters already present on a misconfigured constant', () => {
     // Trusted, they would park a live verifier on a public marketing URL.
     const url = buildInstallUrl(
-      'https://install.example/app?code=leaked&state=leaked&code_verifier=leaked&ref=blog',
+      'https://install.example/app?code=leaked&state=leaked&code_verifier=leaked' +
+        '&partner_user_id=leaked&redirect_uri=leaked&scope=leaked&campaign=spring',
       'partner-app',
     );
     const params = parseQueryParameters(url.split('?')[1] ?? '');
-    expect(params.get('code')).toBeUndefined();
-    expect(params.get('state')).toBeUndefined();
-    expect(params.get('code_verifier')).toBeUndefined();
-    // A non-OAuth parameter the partner set on purpose survives.
-    expect(params.get('ref')).toBe('blog');
+    for (const forbidden of FORBIDDEN_ON_THE_INSTALL_LINK) {
+      expect([...params.keys()]).not.toContain(forbidden);
+    }
+    // A non-attribution parameter the partner set on purpose survives.
+    expect(params.get('campaign')).toBe('spring');
     expect(url).not.toContain('leaked');
+  });
+
+  it('is what installUrlForDisplay() hands the caller by default', () => {
+    const { oauth } = build({ installed: false });
+    expect(oauth.installUrlForDisplay()).toBe(
+      'https://tracive.chottu.link/install?ref=partner-app&utm_source=tracive-sdk-react-native',
+    );
   });
 
   it('does not duplicate attribution when the URL already has some', () => {
     const url = buildInstallUrl(
-      'https://install.example/app?utm_source=old&utm_medium=old',
+      'https://install.example/app?ref=old&utm_source=old&utm_medium=old',
       'partner-app',
     );
+    expect(url).toBe(
+      'https://install.example/app?ref=partner-app&utm_source=tracive-sdk-react-native',
+    );
+    expect(url.match(/ref=/g)).toHaveLength(1);
     expect(url.match(/utm_source=/g)).toHaveLength(1);
-    expect(url).toContain('utm_source=partner-app');
   });
 });
 
@@ -347,6 +385,6 @@ describe('the SDK constants', () => {
     expect(TraciveOAuth.traciveAppScheme).toBe('tracive');
     expect(TraciveOAuth.traciveAndroidPackage).toBe('com.pleistocent.tracive');
     expect(TraciveOAuth.appPresenceProbeUrl).toBe('tracive://authorize');
-    expect(TraciveOAuth.defaultInstallUrl).toBe('https://tracive.chottu.link/app');
+    expect(TraciveOAuth.defaultInstallUrl).toBe('https://tracive.chottu.link/install');
   });
 });

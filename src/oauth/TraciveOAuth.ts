@@ -141,7 +141,10 @@ export class TraciveOAuth {
     return this.#presence.isTraciveAppInstalled();
   }
 
-  /** The install link the SDK opens when the app is absent. Carries attribution only. */
+  /**
+   * The install link to open when the Tracive app is absent. Carries attribution only — `ref` (the
+   * partner's OAuth client id) and `utm_source` — and never an OAuth parameter.
+   */
   installUrlForDisplay(): string {
     return buildInstallUrl(this.#installUrl, this.#config.clientId);
   }
