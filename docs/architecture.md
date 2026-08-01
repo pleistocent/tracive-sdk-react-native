@@ -266,7 +266,7 @@ flowchart TD
 
   Attempt --> Abort{"is the signal already aborted?"}
   Abort -->|"yes"| Aborted["throw. Checked on every pass, so a retry cannot spend a credit for a caller who gave up."]
-  Abort -->|"no"| Send["POST /scammer-checks with searchQueryIndex, detail and locale"]
+  Abort -->|"no"| Send["POST /scammer-checks with creditSource, detail,<br/>query and locale"]
   Send --> Outcome{"response"}
 
   Outcome -->|"2xx"| Ttl{"cacheApplies, cache enabled, and effective TTL above zero?"}

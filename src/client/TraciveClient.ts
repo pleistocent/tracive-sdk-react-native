@@ -382,9 +382,19 @@ export class TraciveClient {
     options: CheckScammerOptions | undefined,
   ): Promise<CheckResult> {
     const detail: Detail = options?.detail ?? 'minimal';
+    // The field is `query`, not `searchQueryIndex`. The API takes either a structured `input` it
+    // normalizes itself or a `query` string the client folded — and the second is the one every
+    // Tracive SDK uses, because folding on the device is what lets an invalid identifier be
+    // rejected before a billable call goes out. A body naming the field anything else is a 400.
+    //
+    // `creditSource` is optional and defaults to USER for a bearer-only caller, which is every
+    // call this SDK makes. It is sent explicitly all the same: the sibling SDKs send it, so a
+    // captured request from one is comparable with another, and an explicit value cannot be
+    // changed by a server-side default moving later.
     const body: Record<string, string> = {
-      searchQueryIndex: query.searchQueryIndex,
+      creditSource: 'USER',
       detail,
+      query: query.searchQueryIndex,
     };
     if (options?.locale !== undefined) body.locale = options.locale;
 

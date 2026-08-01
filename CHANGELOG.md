@@ -23,6 +23,22 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The check request named a field the API does not have.** The body sent
+  `searchQueryIndex`; the field is `query`. The API accepts either a structured `input` it
+  normalizes itself or a `query` string the client already folded, and the second is the one every
+  Tracive SDK uses — folding on the device is what lets an invalid identifier be rejected before a
+  billable call goes out. Under the wrong name the whole body is unreadable, so every check would
+  have failed against a server built to the contract.
+
+  It survived because nothing asserted the shape. The one test that looked at the body asserted
+  three fields by name and never the set of keys, so a wrong spelling and a missing field both read
+  as a pass. The assertions are now `toEqual` over the entire body, in both the full and minimal
+  configurations, which is what makes a silent divergence from the sibling SDKs impossible to keep.
+
+  `creditSource: "USER"` is now sent explicitly as well. It is optional and defaults to exactly
+  that for a bearer-only caller, so this changes nothing the server sees today — but the sibling
+  SDKs send it, and an explicit value cannot be moved later by a change to a server-side default.
+
 - **A forged redirect could cancel a consent the user was in the middle of.** A callback whose
   `state` did not match erased the pending authorization record before returning `stateMismatch`.
   Any app on the device can hand yours a URL, so that made one `openURL` from anywhere enough to

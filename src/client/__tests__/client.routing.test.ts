@@ -363,13 +363,36 @@ describe('the request itself', () => {
 
     const request = transport.lastRequest;
     const body = JSON.parse(request?.body ?? '{}') as Record<string, unknown>;
-    expect(body.searchQueryIndex).toBe('PHONE_+6281234567891');
-    expect(body.detail).toBe('full');
-    expect(body.locale).toBe('id-ID');
+    // The whole body, key for key. This assertion used to name `searchQueryIndex`, which is not a
+    // field the API has — and because nothing here asserted the *set* of keys, the wrong spelling
+    // and the missing `creditSource` both passed for as long as they existed. Asserting the exact
+    // shape is what makes a silent divergence from the sibling SDKs impossible to keep.
+    expect(body).toEqual({
+      creditSource: 'USER',
+      detail: 'full',
+      locale: 'id-ID',
+      query: 'PHONE_+6281234567891',
+    });
     expect(Object.keys(body)).not.toContain('api_key');
     expect(Object.keys(request?.headers ?? {})).not.toContain('api_key');
     expect(request?.headers.authorization).toBe('Bearer live-token');
     expect(request?.url).toBe('https://api.tracive.id/v1/scammer-checks');
+  });
+
+  it('omits locale entirely on a minimal check, rather than sending an empty one', async () => {
+    // The other half of the shape. `locale` only means anything for full detail, so a minimal
+    // check must leave the key out — not send it empty, which would be a value the server has to
+    // interpret. Asserted with toEqual for the same reason as above: a key nobody names is a key
+    // that can appear later without a single test noticing.
+    const transport = new FakeTransport().enqueue(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+    await client.checkScammer(QUERY, { source: 'SERVER' });
+
+    expect(JSON.parse(transport.lastRequest?.body ?? '{}')).toEqual({
+      creditSource: 'USER',
+      detail: 'minimal',
+      query: 'PHONE_+6281234567891',
+    });
   });
 
   it('stamps origin and fetchedAt from the client clock', async () => {
