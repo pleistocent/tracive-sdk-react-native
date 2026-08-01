@@ -89,7 +89,15 @@ interface Attempt {
  */
 function callerIdempotencyKey(options: CheckScammerOptions | undefined): string | undefined {
   const supplied = options?.idempotencyKey;
-  return supplied !== undefined && supplied !== '' ? supplied : undefined;
+  // Blank counts as absent, not as a key. A key of `'   '` is a build variable that did not expand
+  // or a trimmed-to-nothing form field, and treating it as real gives that check a latch of its own
+  // and a retry budget, both on the strength of whitespace. The same rule as everywhere else this
+  // SDK asks whether a credential-shaped string is there.
+  //
+  // The value itself is passed through untouched, whitespace included. It is what the server
+  // deduplicates on and what the partner recorded against their transaction, so trimming it would
+  // send a key that differs from the one they wrote down. Only the "is there a key" reading trims.
+  return supplied !== undefined && supplied.trim() !== '' ? supplied : undefined;
 }
 
 export class TraciveClient {

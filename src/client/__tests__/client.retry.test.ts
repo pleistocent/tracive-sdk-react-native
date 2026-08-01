@@ -152,6 +152,20 @@ describe('the key the SDK generates when the caller supplies none', () => {
     expect(transport.lastRequest?.headers['idempotency-key']).toMatch(KEY_SHAPE);
     expect(transport.requests).toHaveLength(1);
   });
+
+  it('replaces a whitespace-only key, which is not a key either', async () => {
+    // Same rule as the empty string, one step further out. Sent as given it would be a header the
+    // server cannot deduplicate on, backed by a retry budget nothing earned.
+    const transport = new FakeTransport().always(jsonResponse(503, { code: 'server_error' }));
+    const { client } = build({ transport });
+
+    await expect(
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: '   ' }),
+    ).rejects.toMatchObject({ kind: 'server' });
+
+    expect(transport.lastRequest?.headers['idempotency-key']).toMatch(KEY_SHAPE);
+    expect(transport.requests).toHaveLength(1);
+  });
 });
 
 describe('a check WITH an idempotency key', () => {

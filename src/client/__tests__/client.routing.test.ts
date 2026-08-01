@@ -692,6 +692,21 @@ describe('concurrent identical checks', () => {
     expect(transport.requests).toHaveLength(1);
   });
 
+  it('ARE still collapsed when one caller passes only whitespace', async () => {
+    // A key of '   ' is a build variable that did not expand or a form field trimmed to nothing.
+    // Giving it a latch of its own splits the double-tap the latch exists to collapse, and bills
+    // it twice, on the strength of whitespace.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: '   ' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(1);
+  });
+
   it('leave a call that carries an AbortSignal on its own', async () => {
     // Joining it to somebody else's flight would mean one caller's abort cancels another's
     // check, or that an abort no longer stops the request at all. A caller who passes a signal
