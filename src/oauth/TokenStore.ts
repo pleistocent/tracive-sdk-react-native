@@ -54,19 +54,70 @@ export function serializeTokens(tokens: TraciveTokens): string {
   return JSON.stringify(stored);
 }
 
+/**
+ * EVERY field is checked, and a record failing any check is reported as absent — exactly as
+ * unparseable JSON already was. Absence is a state the whole SDK already handles: the caller
+ * authorizes again.
+ *
+ * Only `accessToken` used to be checked, and the other four were handed straight back. That did not
+ * make a damaged record work; it moved the failure somewhere else, later, and out of sight of the
+ * thing that could have named it. `refreshToken: null` is not `undefined`, so the refresh path took
+ * it for a token and reached `null.trim()`. An `expiresAtMs` the serializer never wrote became an
+ * Invalid Date, or — for `null` and for `true` — a confident expiry in 1970. A `scopes` that was a
+ * string was published from `grantedScopes()` one character per entry. This is the same family as
+ * the pending record whose unvalidated `createdAtMs` made `NaN > 600` false and so never expired.
+ *
+ * A field that is ABSENT is not a failure: `refreshToken` and `expiresAtMs` are genuinely optional,
+ * and `tokenType` and `scopes` keep the defaults they have always had. A field that is PRESENT and
+ * of the wrong type is a failure, `null` included — `serializeTokens` never writes one, so a record
+ * containing it was not written by this SDK, and guessing a default for it would be inventing a
+ * grant rather than restoring one.
+ */
 export function deserializeTokens(json: string): TraciveTokens | undefined {
-  let parsed: StoredTokens;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(json) as StoredTokens;
+    parsed = JSON.parse(json);
   } catch {
     return undefined;
   }
-  if (typeof parsed?.accessToken !== 'string') return undefined;
+  // `typeof null === 'object'`, and an array is an object too. Neither is a record.
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const record = parsed as Record<string, unknown>;
+
+  const accessToken = record.accessToken;
+  if (typeof accessToken !== 'string') return undefined;
+
+  const refreshToken = record.refreshToken;
+  if (refreshToken !== undefined && typeof refreshToken !== 'string') return undefined;
+
+  const storedTokenType = record.tokenType;
+  if (storedTokenType !== undefined && typeof storedTokenType !== 'string') return undefined;
+
+  const storedExpiresAtMs = record.expiresAtMs;
+  let expiresAt: Date | undefined;
+  if (storedExpiresAtMs !== undefined) {
+    if (typeof storedExpiresAtMs !== 'number') return undefined;
+    expiresAt = new Date(storedExpiresAtMs);
+    // A number can still be no date: `NaN` and anything beyond ±8.64e15 both produce an Invalid
+    // Date, whose `getTime()` is `NaN` and every comparison against which is false.
+    if (Number.isNaN(expiresAt.getTime())) return undefined;
+  }
+
+  const storedScopes = record.scopes;
+  const scopes: string[] = [];
+  if (storedScopes !== undefined) {
+    if (!Array.isArray(storedScopes)) return undefined;
+    for (const scope of storedScopes as unknown[]) {
+      if (typeof scope !== 'string') return undefined;
+      scopes.push(scope);
+    }
+  }
+
   return redactedTokens({
-    accessToken: parsed.accessToken,
-    ...(parsed.refreshToken !== undefined ? { refreshToken: parsed.refreshToken } : {}),
-    tokenType: parsed.tokenType ?? 'Bearer',
-    ...(parsed.expiresAtMs !== undefined ? { expiresAt: new Date(parsed.expiresAtMs) } : {}),
-    scopes: parsed.scopes ?? [],
+    accessToken,
+    ...(refreshToken !== undefined ? { refreshToken } : {}),
+    tokenType: storedTokenType ?? 'Bearer',
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    scopes,
   });
 }

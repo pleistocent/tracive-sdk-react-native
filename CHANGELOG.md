@@ -39,6 +39,28 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A stored grant was restored with one field of five validated.** `deserializeTokens` checked
+  that `accessToken` was a string and handed `refreshToken`, `tokenType`, `expiresAtMs` and `scopes`
+  straight back as it found them. That never made a damaged record work — it moved the failure
+  somewhere else, later, and out of reach of the code that could have named it. `refreshToken: null`
+  is not `undefined`, so the refresh path took it for a token and reached `null.trim()`, throwing a
+  raw `TypeError` that is not a `TraciveError` and that no documented error path catches; before the
+  blank-token rule landed it went out on the wire as the literal `refresh_token=null`. An
+  `expiresAtMs` that was a string became an Invalid Date, and one that was `null` or `true` became a
+  confident expiry in 1970. A `scopes` that was a string was published from `grantedScopes()` one
+  character per entry.
+
+  Every field is now checked, and a record failing any check is reported as absent — exactly as
+  unparseable JSON already was, and exactly as the pending-authorization record whose unvalidated
+  `createdAtMs` made `NaN > 600` false and so never expired. Absence is a state the SDK already
+  handles everywhere: the caller authorizes again. An **absent** optional field is still not a
+  failure — `refreshToken` and `expiresAtMs` stay optional, and `tokenType` and `scopes` keep the
+  defaults they have always had — but a field that is present and of the wrong type is, `null`
+  included: `serializeTokens` never writes one, so a record holding it was not written by this SDK,
+  and defaulting it would be inventing a grant rather than restoring one.
+
+  Only reachable through a persistent `TokenStore`, which is the configuration this SDK asks for.
+
 - **A refresh response that omitted `refresh_token` threw the grant away.** RFC 6749 §6 lets a
   token endpoint leave the field out of a refresh response, and leaving it out means _keep the one
   you have_ — not _you no longer have one_. The decoder built a fresh record and copied the field
