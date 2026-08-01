@@ -65,10 +65,7 @@ describe('shared grammar fixture', () => {
  *
  * `null` means "throws nothing at all today".
  */
-const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {
-  'crypto-empty-address': 'empty_value',
-  'username-empty-platform': 'empty_value',
-};
+const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {};
 
 /** Same idea for the record-key guard: the value maps to what the guard returns today. */
 const PENDING_GUARD_CASES: Readonly<Record<string, boolean>> = {
@@ -149,6 +146,43 @@ describe('the e-mail shape rule', () => {
     ]) {
       expect(rejectionOf(() => TraciveQuery.email(value))).toBeUndefined();
     }
+  });
+});
+
+describe('the empty-field reasons', () => {
+  // Every token here is asserted as a literal string, because these are cross-SDK wire values:
+  // a rename must fail this test rather than quietly redefine the contract.
+
+  it('names the field that was empty rather than reporting a generic empty value', () => {
+    // A shared `empty_value` made two different caller mistakes indistinguishable, so neither
+    // could be turned into a useful message.
+    expect(rejectionOf(() => TraciveQuery.crypto({ chain: 'ETH', address: '   ' }))).toBe(
+      'empty_address',
+    );
+    expect(rejectionOf(() => TraciveQuery.username({ platform: '  ', handle: 'scammerx' }))).toBe(
+      'empty_platform',
+    );
+  });
+
+  it('leaves the neighbouring tokens spelled exactly as they were', () => {
+    expect(rejectionOf(() => TraciveQuery.crypto({ chain: '', address: '0xabc' }))).toBe(
+      'empty_chain',
+    );
+    expect(rejectionOf(() => TraciveQuery.username({ platform: 'INSTAGRAM', handle: '' }))).toBe(
+      'empty_handle',
+    );
+    // `empty_value` survives, and now means exactly one thing: an empty e-mail.
+    expect(rejectionOf(() => TraciveQuery.email('   '))).toBe('empty_value');
+    expect(
+      rejectionOf(() =>
+        TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bankCode: 'BCA', account: '   ' }),
+      ),
+    ).toBe('empty_account_id');
+    expect(
+      rejectionOf(() =>
+        TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bankCode: '', account: '1234567890' }),
+      ),
+    ).toBe('empty_bank_code');
   });
 });
 

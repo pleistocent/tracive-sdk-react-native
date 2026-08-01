@@ -63,6 +63,13 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Changed
 
+- **An empty crypto address and an empty username platform now name the field that was empty**:
+  `empty_address` and `empty_platform`, replacing the shared `empty_value` both used to throw. Two
+  different caller mistakes were indistinguishable, so neither could be turned into a message that
+  said which field to fix. `empty_value` survives and now means exactly one thing — an empty
+  e-mail. The two new tokens are part of the shared cross-SDK contract, and the suite asserts them
+  as literal strings so a rename fails the build.
+
 - The public `TraciveClient.mode` is a redacted copy in proxy mode. The credentials still reach
   the wire; only what a serialiser can see has changed.
 - `TraciveClock.sleep` takes an optional `AbortSignal`. Widening, not breaking: an implementation

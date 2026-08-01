@@ -10,9 +10,12 @@ export type QueryRejectionReason =
   | 'country_not_alpha3'
   | 'empty_account_id'
   | 'empty_bank_code'
+  /** An empty e-mail, and only that. Every other empty field names itself. */
   | 'empty_value'
   | 'empty_handle'
+  | 'empty_platform'
   | 'empty_chain'
+  | 'empty_address'
   | 'invalid_document_id';
 
 /**

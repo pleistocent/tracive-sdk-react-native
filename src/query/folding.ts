@@ -106,7 +106,10 @@ export function foldChain(value: string): string {
  */
 export function foldCryptoAddress(value: string): string {
   const trimmed = value.trim();
-  if (trimmed === '') throw new TraciveQueryError('empty_value');
+  // Named for the field, not just "empty": `CRYPTO_ETH_` and `CRYPTO__1A1zP1` are two different
+  // caller mistakes, and a shared token left a caller unable to tell them apart or say which one
+  // to fix.
+  if (trimmed === '') throw new TraciveQueryError('empty_address');
   // Deliberately NOT guarded: the branch is taken only for a string already proven to be ASCII
   // hex, and ASCII case mapping is the one thing a reduced Unicode build still gets right.
   return EVM_ADDRESS.test(trimmed) ? trimmed.toLowerCase() : trimmed;
@@ -115,7 +118,9 @@ export function foldCryptoAddress(value: string): string {
 /** NFC -> uppercase -> trim. */
 export function foldPlatform(value: string): string {
   const folded = foldedUpperCase(normalizeNfc(value)).trim();
-  if (folded === '') throw new TraciveQueryError('empty_value');
+  // As with the crypto address: `USERNAME__scammerx` and `USERNAME_INSTAGRAM_` are different
+  // mistakes and now say so.
+  if (folded === '') throw new TraciveQueryError('empty_platform');
   return folded;
 }
 
