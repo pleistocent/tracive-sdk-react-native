@@ -203,6 +203,35 @@ describe('a check WITH an idempotency key', () => {
   });
 });
 
+/**
+ * A retry budget is granted by the CALLER's key and by nothing else, because that key is the only
+ * one that survives a process restart and a new client instance. The single-flight latch used to
+ * key on the identifier, the detail level and the locale alone, so a caller who supplied a key
+ * could be handed a flight started by a caller who had not — and inherit that flight's answer,
+ * including the refusal to retry. The budget was lost to whoever happened to arrive first, with
+ * nothing said about it.
+ */
+describe('a keyed check that overlaps a keyless one', () => {
+  it('keeps its own retry budget instead of inheriting the keyless refusal', async () => {
+    const transport = new FakeTransport().always(jsonResponse(503, { code: 'server_error' }));
+    const { client } = build({ transport });
+
+    await Promise.allSettled([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-e' }),
+    ]);
+
+    // Counted on the recorded requests rather than on either caller's error, because both callers
+    // fail either way and only the request log distinguishes a retried check from a shared one.
+    const keyed = transport.requests.filter(
+      (request) => request.headers['idempotency-key'] === 'txn-e',
+    );
+    expect(keyed).toHaveLength(3);
+    // And the keyless caller still gets exactly one attempt, which is the rule it asked for.
+    expect(transport.requests).toHaveLength(4);
+  });
+});
+
 describe('GET requests', () => {
   it('are always retryable, because they have no side effects', async () => {
     const transport = new FakeTransport()

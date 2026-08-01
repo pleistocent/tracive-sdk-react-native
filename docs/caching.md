@@ -9,8 +9,12 @@ locale, that overlap in time collapse into one billable request and both receive
 covers the double-tapped button and the list screen that renders the same identifier twice — the
 cache alone cannot, because its write happens after both requests have already gone out.
 
-One case is deliberately excluded: a call that passes an `AbortSignal` runs on its own. Sharing it
-would mean one caller's abort cancelling another caller's check.
+Two cases are deliberately excluded. A call that passes an `AbortSignal` runs on its own, because
+sharing would mean one caller's abort cancelling another caller's check. And two calls carrying
+**different `idempotencyKey` values** run on their own too: those first three fields describe the
+query, while an idempotency key describes the transaction, so different keys are you saying these
+are two billable transactions. Passing the same key on both, or none on either, still collapses
+them.
 
 ## The default is in-memory, and you should change it
 

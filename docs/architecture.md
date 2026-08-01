@@ -261,7 +261,7 @@ flowchart TD
 
   Source -->|"SERVER or SERVER_FIRST"| Flight
   Flight -->|"yes"| Attempt["one attempt"]
-  Flight -->|"no"| Share["join or start the in-flight check, keyed on the cache key, detail and locale"]
+  Flight -->|"no"| Share["join or start the in-flight check, keyed on the cache key, detail, locale<br/>and your idempotencyKey when you supplied one"]
   Share --> Attempt
 
   Attempt --> Abort{"is the signal already aborted?"}
@@ -317,6 +317,15 @@ requests have already gone out.
 
 A call carrying an `AbortSignal` deliberately neither starts nor joins a shared flight: sharing
 would mean one caller's abort cancelling another caller's check.
+
+Your own `idempotencyKey` is part of the latch key when you supply one. The identifier, the detail
+level and the locale describe the query; an idempotency key describes the transaction, so two
+concurrent checks carrying different keys are you saying these are two billable transactions, and
+they are sent as two. Collapsing them also handed the second caller a request bearing the first
+caller's key, and stripped it of the retry budget only its own key grants. Supply the same key on
+both, or none on either, and they still share one flight — which is the case the latch exists for,
+since a double-tapped button and a list rendering the same identifier twice both go through one
+code path with one set of options.
 
 ### What is never cached, and why
 

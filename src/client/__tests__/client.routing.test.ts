@@ -620,6 +620,78 @@ describe('concurrent identical checks', () => {
     expect(later.riskTier).toBe('HIGH');
   });
 
+  /**
+   * The latch keys on the identifier, the detail level and the locale, and those three describe
+   * the QUERY. An idempotency key describes the TRANSACTION, and two callers who supplied different
+   * ones have said in as many words that these are two billable transactions. Collapsing them
+   * answered both from one request and sent the first caller's key on it — the same collapse the
+   * comment on the generated key already refuses to make through the other door, where deriving a
+   * key from the query "would collapse two deliberate re-checks of the same identifier into one".
+   */
+  it('are NOT collapsed when the callers supplied different idempotency keys', async () => {
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-a' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-b' }),
+    ]);
+
+    // Asserted on the recorded requests: two went out, and each carried the key its own caller
+    // supplied rather than both carrying whichever caller happened to arrive first.
+    expect(transport.requests).toHaveLength(2);
+    expect(transport.requests.map((request) => request.headers['idempotency-key']).sort()).toEqual([
+      'txn-a',
+      'txn-b',
+    ]);
+  });
+
+  it('are NOT collapsed when only one caller supplied a key', async () => {
+    // The keyed caller would otherwise join the keyless flight and be answered by a request
+    // carrying somebody else's generated key — and, with it, no retry budget.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-c' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(2);
+    expect(transport.requests.map((request) => request.headers['idempotency-key'])).toContain(
+      'txn-c',
+    );
+  });
+
+  it('ARE still collapsed when both callers supplied the SAME key', async () => {
+    // The same key is the caller saying these are one transaction, which is precisely what the
+    // latch is for.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-d' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'txn-d' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.lastRequest?.headers['idempotency-key']).toBe('txn-d');
+  });
+
+  it('ARE still collapsed when one caller passes an empty string and the other passes none', async () => {
+    // An empty string is not a key anywhere else, and it must not become one here either: treating
+    // it as distinct would split a flight that should be shared and bill the double-tap twice.
+    const transport = new FakeTransport().always(jsonResponse(200, checkResponseBody()));
+    const { client } = build({ transport });
+
+    await Promise.all([
+      client.checkScammer(QUERY, { source: 'SERVER' }),
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: '' }),
+    ]);
+
+    expect(transport.requests).toHaveLength(1);
+  });
+
   it('leave a call that carries an AbortSignal on its own', async () => {
     // Joining it to somebody else's flight would mean one caller's abort cancels another's
     // check, or that an abort no longer stops the request at all. A caller who passes a signal

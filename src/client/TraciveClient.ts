@@ -75,6 +75,23 @@ interface Attempt {
   readonly response: HttpResponse;
 }
 
+/**
+ * The caller's OWN idempotency key, or `undefined` when they supplied none.
+ *
+ * An empty string is not a key. Sent as one it would give the caller a retry budget backed by a
+ * header no server can deduplicate on, which is the exact trade the budget exists to refuse.
+ *
+ * It is one function because two places decide on it — the retry budget and the header in
+ * `#sendCheck`, and the single-flight latch key in `#fetchCheck` — and the two must agree on what
+ * counts as a key. If they drifted, a caller passing `''` would be latched apart from a caller
+ * passing nothing while sending the identical unkeyed request, which is a second billed check for
+ * the double tap the latch exists to collapse.
+ */
+function callerIdempotencyKey(options: CheckScammerOptions | undefined): string | undefined {
+  const supplied = options?.idempotencyKey;
+  return supplied !== undefined && supplied !== '' ? supplied : undefined;
+}
+
 export class TraciveClient {
   /**
    * Safe to serialise. In proxy mode this is NOT the object the caller passed: the header values
@@ -100,8 +117,9 @@ export class TraciveClient {
   readonly #random: TraciveRandom;
   readonly #onDiagnostic: DiagnosticSink | undefined;
   /**
-   * Single-flight for checks, keyed on the folded record key plus the detail level and locale.
-   * See `#fetchCheck` for why this exists and what it deliberately does not cover.
+   * Single-flight for checks, keyed on the folded record key plus the detail level and the locale,
+   * and on the caller's idempotency key when they supplied one. See `#fetchCheck` for why this
+   * exists and what it deliberately does not cover.
    */
   readonly #inFlightChecks = new Map<string, Promise<CheckResult>>();
 
@@ -383,6 +401,21 @@ export class TraciveClient {
    * `await` between the lookup and the `set`, which is the whole point — otherwise two callers
    * both observe an empty map and both start a flight.
    *
+   * It also includes the CALLER's idempotency key when there is one, and is left exactly as it was
+   * when there is not. Those first three fields describe the query; an idempotency key describes
+   * the transaction, and two callers who supplied different ones have said in as many words that
+   * these are two billable transactions. Collapsing them answered both from one request and sent
+   * the first caller's key on it, which is the same collapse the generated key already refuses to
+   * make through the other door: deriving one from the query "would collapse two deliberate
+   * re-checks of the same identifier into one". A caller who supplied a key could also be handed a
+   * flight started by a caller who had not, and inherit that flight's refusal to retry — a retry
+   * budget is granted by the caller's own key and by nothing else, and losing it that way was
+   * silent.
+   *
+   * What the latch exists for is untouched, because that case carries no caller key at all: a
+   * double-tapped button and a list rendering the same identifier in two cells both go through one
+   * code path with one set of options, so they still share a flight and are still billed once.
+   *
    * A call carrying an `AbortSignal` deliberately neither starts nor joins a shared flight. One
    * caller's abort would otherwise cancel another caller's check, or — if the signal were dropped
    * on the way in — an abort would stop stopping anything, spending the credit H2 exists to save.
@@ -397,7 +430,10 @@ export class TraciveClient {
     if (options?.signal !== undefined) return this.#sendCheck(query, options);
 
     const detail: Detail = options?.detail ?? 'minimal';
-    const latchKey = `${key.hex}|${detail}|${options?.locale ?? ''}`;
+    const callerKey = callerIdempotencyKey(options);
+    const latchKey =
+      `${key.hex}|${detail}|${options?.locale ?? ''}` +
+      (callerKey === undefined ? '' : `|${callerKey}`);
     const existing = this.#inFlightChecks.get(latchKey);
     if (existing !== undefined) return existing;
 
@@ -429,12 +465,8 @@ export class TraciveClient {
     };
     if (options?.locale !== undefined) body.locale = options.locale;
 
-    // An empty string is not a key. Sent as one it would give the caller a retry budget backed by
-    // a header no server can deduplicate on, which is the exact trade the budget exists to refuse.
-    const callerKey =
-      options?.idempotencyKey !== undefined && options.idempotencyKey !== ''
-        ? options.idempotencyKey
-        : undefined;
+    // The same rule the latch key in `#fetchCheck` uses, so the two cannot drift.
+    const callerKey = callerIdempotencyKey(options);
 
     const { response } = await this.#execute({
       method: 'POST',

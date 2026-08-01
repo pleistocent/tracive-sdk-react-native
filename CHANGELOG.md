@@ -39,6 +39,26 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The single-flight latch on checks ignored your idempotency key, and overrode what it says.**
+  The latch keyed on the folded record key, the detail level and the locale — three fields that
+  describe the _query_. An idempotency key describes the _transaction_, so two concurrent checks
+  carrying different keys are you saying these are two billable transactions, and they were
+  collapsed into one anyway: one request, one answer for both callers, and the first caller's key
+  on the wire. That is the same collapse the generated key already refuses to make through the
+  other door, where deriving a key from the query would "collapse two deliberate re-checks of the
+  same identifier into one".
+
+  It cost a retry budget as well. Only a caller-supplied key grants one, and a caller who supplied
+  a key could be handed a flight started by a caller who had not — inheriting that flight's refusal
+  to retry a 5xx, a 429 or a timeout, with nothing said about it.
+
+  The caller's key is now part of the latch key when there is one, and the latch key is unchanged
+  when there is not. **What the latch exists for is untouched**: a double-tapped button and a list
+  rendering the same identifier in two cells both go through one code path with one set of options,
+  so they still share a flight and are still billed once. An empty string still counts as no key,
+  here as everywhere else, so it cannot split a flight that should be shared. This change is
+  landing in all four SDKs together.
+
 - **A stored grant was restored with one field of five validated.** `deserializeTokens` checked
   that `accessToken` was a string and handed `refreshToken`, `tokenType`, `expiresAtMs` and `scopes`
   straight back as it found them. That never made a damaged record work — it moved the failure

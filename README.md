@@ -362,6 +362,11 @@ per-call one, so that its own replay after a 401 token refresh can be collapsed 
 does not give you a retry budget — only your own key does — and it is no substitute for a key
 derived from your transaction if you want retries, or deduplication across processes.
 
+Your key also keeps a check out of somebody else's in-flight one. Overlapping checks for the same
+identifier are normally collapsed into a single billable request, but two carrying **different**
+keys are two transactions by your own account and are sent as two. See
+[docs/caching.md](docs/caching.md).
+
 ### Do not poll `credits()`
 
 Handle the 402 from `checkScammer` instead. It saves a round trip per transaction, and a balance
