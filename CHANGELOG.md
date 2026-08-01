@@ -6,6 +6,45 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+Audit follow-up. Nothing here is a published change yet — 0.1.0 has not shipped — so this section
+records what a reader of the 0.1.0 notes above would otherwise be misled by.
+
+### Fixed
+
+- **The redaction layer is now actually applied.** `redactedProxyConfiguration`, `redactedRequest`
+  and `redactedResponse` existed and were tested, and nothing in production called any of them.
+  `JSON.stringify(client)` printed a partner's proxy authorization header verbatim, and the raw
+  `HttpRequest` — bearer token included — was handed to the injectable transport. The 0.1.0 note
+  about redacting `toJSON`/`toString` was true of the helpers and false of the shipping paths.
+- **An aborted check no longer spends a credit.** `AbortSignal` reached `fetch` and neither the
+  retry loop nor the backoff sleep, so an aborted call still sent its next attempt. A long
+  `Retry-After` also held the caller with no way out; `TraciveClock.sleep` is now cancellable, and
+  serves waits longer than a 32-bit millisecond count in slices instead of firing immediately.
+- **A failing secure store no longer loses an authorization.** A rejecting pending-store read
+  produced an unhandled rejection and dropped the result permanently; `handleCallback` and
+  `authorize` are now total, and a throwing `onAuthResult` listener no longer stops delivery to
+  the others.
+- **Concurrent identical checks are billed once**, and a malformed 2xx body surfaces as a
+  `TraciveError` rather than a raw `SyntaxError`.
+- **A bare 401 now triggers a token refresh**, which matters behind a partner gateway.
+- The Unicode guard covers the case mappings as well as NFC; the Expo plugin merges the Android
+  `<queries>` block instead of overwriting it and no longer rewrites a `launchMode` the host chose;
+  a redirect URI carrying userinfo or a port is rejected rather than folded into the host; the
+  injected CSPRNG port reaches the cache cipher; `base64UrlDecode` rejects foreign characters
+  instead of silently dropping them; body sizes are counted in bytes.
+
+### Changed
+
+- The public `TraciveClient.mode` is a redacted copy in proxy mode. The credentials still reach
+  the wire; only what a serialiser can see has changed.
+- `TraciveClock.sleep` takes an optional `AbortSignal`. Widening, not breaking: an implementation
+  that ignores it still satisfies the interface.
+- The shared grammar fixture moves to v3: NFC applies to bank codes too, and a vector pins it.
+  34 vectors now.
+- `npm run hygiene` reads a tracked term list and proves every rule can still fire before it
+  scans. It could not fail in CI before. `npm run verify` and CI also run a runtime-dependency
+  audit.
+
 ## [0.1.0]
 
 First implementation. Not published to npm yet, and the Tracive API is not live yet.
@@ -30,8 +69,8 @@ First implementation. Not published to npm yet, and the Tracive API is not live 
   during prebuild.
 - Redacting `toJSON` and `toString` on every credential-bearing value, because JavaScript leaks
   through serialisation unless you opt out.
-- The shared cross-SDK grammar fixture, pinned by sha256 and driving 33 vectors, 11 rejections and
-  the record-key guard cases as executable tests.
+- The shared cross-SDK grammar fixture, pinned by sha256 and driving its vectors, rejections and
+  record-key guard cases as executable tests.
 
 ### Notes
 
