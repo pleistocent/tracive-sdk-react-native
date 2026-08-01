@@ -55,12 +55,20 @@ and [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers): pure JavaScr
 together they pull in **zero** transitive packages. See [SECURITY.md](SECURITY.md) for their audit
 provenance, stated precisely.
 
-### You will need a random source
+### You will need a random source, for every call and not just for sign-in
 
-React Native ships no WebCrypto, and PKCE and cache encryption both need a real one. The SDK
-**throws a named error rather than falling back to `Math.random()`** — a deterministic PRNG here
-produces predictable PKCE verifiers while every test still passes, which is exactly the kind of
-failure that stays invisible until it matters.
+React Native ships no WebCrypto. PKCE and cache encryption need a real one, and so does **every
+`checkScammer` call**: each check carries an `Idempotency-Key`, and when you supply none the SDK
+generates one, drawn from the same seam. There is no path through this SDK that does not need
+randomness.
+
+Without it, a check fails with `TraciveConfigurationError` and the code **`csprng_unavailable`** —
+the same named, actionable error authorization has always raised, now on the check path too. The
+SDK **throws rather than falling back to `Math.random()`**: a deterministic PRNG produces
+predictable PKCE verifiers and predictable cache nonces while every test still passes, which is
+exactly the kind of failure that stays invisible until it matters.
+
+Satisfy it either with a polyfill:
 
 ```sh
 # Expo
@@ -75,6 +83,17 @@ and, for bare React Native, at the very top of your entry file:
 ```ts
 import 'react-native-get-random-values';
 ```
+
+or by passing your own implementation of the `TraciveRandom` port, which `TraciveClient` and
+`TraciveOAuth` both accept as `random`:
+
+```ts
+const client = new TraciveClient({ mode, random: myRandom });
+```
+
+That injection point is the supported answer for a runtime where a polyfill is not an option. It is
+not an answer for a runtime where one is: whatever you pass has to be cryptographically secure, and
+nothing here can check that for you.
 
 ### Then install a persistent cache. This is a bill, not a performance tip.
 

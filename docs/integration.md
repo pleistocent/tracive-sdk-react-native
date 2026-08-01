@@ -159,13 +159,32 @@ release, so they land in your own logging rather than nowhere.
 
 ## Runtime requirements
 
-### A CSPRNG
+### A CSPRNG, on every path
 
 React Native ships no WebCrypto. Install one satisfier — `expo-standard-web-crypto` or `expo-crypto`
 on Expo, `react-native-get-random-values` on bare React Native (imported at the very top of your
 entry file). Without it, anything needing randomness throws
 `TraciveConfigurationError('csprng_unavailable')` with a message naming both options. It will not
 fall back to `Math.random()`.
+
+**This is no longer only an authorization requirement.** Every `checkScammer` call carries an
+`Idempotency-Key`, and the SDK generates one when you supply none — from the same seam. So a
+runtime with no WebCrypto polyfill now fails the check itself with `csprng_unavailable`, where it
+previously sent an unkeyed request and was billed for it. That is the intended trade: without a key
+the SDK's own replay after a 401 token refresh is indistinguishable from the original request, so
+anything billed before or during authorisation is billed twice with no way for you to detect it.
+Failing loudly on a configuration you can fix in one line beats a double charge you cannot see.
+
+The other way to satisfy it is `random`, the injectable `TraciveRandom` port that both
+`TraciveClient` and `TraciveOAuth` accept:
+
+```ts
+const client = new TraciveClient({ mode, random: myRandom });
+```
+
+That is the supported answer for a runtime where a polyfill is not an option, and it is the same
+port the whole SDK draws from — so passing something that is not cryptographically secure defeats
+PKCE and the cache nonces along with the key. Nothing here can check that for you.
 
 ### A JavaScript engine with real Unicode normalization
 
