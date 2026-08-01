@@ -681,8 +681,18 @@ export class TraciveOAuth {
     // asks only that the field be a string. Sending `Bearer ` would spend a round trip to be told
     // what is already known here. With no refresh token to spend, `refreshTokens()` throws
     // `invalidToken`, which is the right answer for a grant that cannot be renewed.
-    if (tokens.accessToken === '') {
-      const refreshed = await this.refreshTokens({ staleAccessToken: '' });
+    //
+    // BLANK, not empty. A token of spaces or a stray newline is exactly as unusable as `''` and
+    // arrives the same way — a backend that built the field by concatenation, a value round-tripped
+    // through a text column — but tested for emptiness it slips through and goes out as
+    // `Bearer    `, which is the request this branch exists to prevent. The Kotlin SDK applies its
+    // blank test here; this is the same rule.
+    if (tokens.accessToken.trim() === '') {
+      // The blank token itself is named as the stale one, not `''`. `#doRefresh` compares what it
+      // reads from the store against this value to spot a caller that arrived after somebody
+      // else's refresh; passing a token that was never stored makes every such caller look raced
+      // and hand back the damaged grant it was sent here to repair.
+      const refreshed = await this.refreshTokens({ staleAccessToken: tokens.accessToken });
       return refreshed.accessToken;
     }
     return tokens.accessToken;
@@ -913,10 +923,14 @@ export class TraciveOAuth {
   async #doRefresh(options?: { staleAccessToken?: string }): Promise<TraciveTokens> {
     const current = await this.#tokenStore.read();
     const refreshToken = current?.refreshToken;
-    if (refreshToken === undefined) {
+    // A blank refresh token is no refresh token. It reaches the store the same way a blank access
+    // token does, and the damaged-grant repair in `ensureAccessToken` now leads straight here, so
+    // sending one would be a request that cannot succeed — and one that marks the value spent, so
+    // a transport failure on it would refuse a grant that was never renewable in the first place.
+    if (refreshToken === undefined || refreshToken.trim() === '') {
       throw new TraciveError({
         kind: 'invalidToken',
-        message: 'There is no refresh token stored, so the grant cannot be renewed.',
+        message: 'There is no usable refresh token stored, so the grant cannot be renewed.',
       });
     }
 
@@ -1057,7 +1071,10 @@ export class TraciveOAuth {
     }
 
     const accessToken = body.access_token;
-    if (typeof accessToken !== 'string' || accessToken === '') {
+    // Blank counts as absent, for the same reason it does in `ensureAccessToken`: a token of
+    // spaces cannot authenticate anything, so storing one only defers the failure to the next
+    // request and makes it look like a rejection by the server rather than a malformed reply.
+    if (typeof accessToken !== 'string' || accessToken.trim() === '') {
       throw new TraciveError({
         kind: 'server',
         status: response.status,

@@ -476,4 +476,96 @@ describe('ensureAccessToken', () => {
     await expect(oauth.ensureAccessToken()).rejects.toMatchObject({ kind: 'invalidToken' });
     expect(transport.requests).toHaveLength(0);
   });
+
+  /**
+   * Blank, not empty. A token of spaces reaches the store exactly as `''` does — a backend that
+   * built the field by concatenation, a value round-tripped through a text column — and tested for
+   * emptiness it slips past the repair and goes out as `Bearer    `.
+   */
+  it.each([['   '], ['\t'], ['\n  ']])(
+    'refreshes a whitespace-only access token (%j) rather than sending it',
+    async (whitespace) => {
+      const transport = new FakeTransport().always(
+        jsonResponse(200, { access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 }),
+      );
+      const oauth = new TraciveOAuth({
+        mode: CONFIG,
+        transport,
+        clock: new FakeClock(),
+        tokenStore: new InMemoryTokenStore({
+          accessToken: whitespace,
+          refreshToken: 'rt',
+          tokenType: 'Bearer',
+          scopes: [],
+        }),
+      });
+      expect(await oauth.ensureAccessToken()).toBe('renewed');
+      expect(transport.requests).toHaveLength(1);
+    },
+  );
+
+  it('throws for a whitespace-only access token with no refresh token, without a request', async () => {
+    const transport = new FakeTransport();
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: '  ',
+        tokenType: 'Bearer',
+        scopes: [],
+      }),
+    });
+    await expect(oauth.ensureAccessToken()).rejects.toMatchObject({ kind: 'invalidToken' });
+    expect(transport.requests).toHaveLength(0);
+  });
+});
+
+describe('a blank credential anywhere else in the grant', () => {
+  /**
+   * The repair above leads straight here, so a record damaged in both fields would otherwise send
+   * a refresh token of spaces — a request that cannot succeed, and one that marks the value as
+   * presented, so a timeout on it would refuse a grant that was never renewable.
+   */
+  it('refuses a whitespace-only refresh token instead of presenting it', async () => {
+    const transport = new FakeTransport();
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: new InMemoryTokenStore({
+        accessToken: 'at',
+        refreshToken: '   ',
+        tokenType: 'Bearer',
+        scopes: [],
+      }),
+    });
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'invalidToken' });
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  /**
+   * The other direction: the server's own reply. Storing a whitespace access token would defer the
+   * failure to the next request, where it looks like a rejected grant rather than a malformed
+   * token response.
+   */
+  it('rejects a token response whose access token is only whitespace', async () => {
+    const transport = new FakeTransport().always(
+      jsonResponse(200, { access_token: '  ', token_type: 'Bearer', expires_in: 3600 }),
+    );
+    const store = new InMemoryTokenStore({
+      accessToken: 'at',
+      refreshToken: 'rt',
+      tokenType: 'Bearer',
+      scopes: [],
+    });
+    const oauth = new TraciveOAuth({
+      mode: CONFIG,
+      transport,
+      clock: new FakeClock(),
+      tokenStore: store,
+    });
+    await expect(oauth.refreshTokens()).rejects.toMatchObject({ kind: 'server' });
+    expect((await store.read())?.accessToken).toBe('at');
+  });
 });

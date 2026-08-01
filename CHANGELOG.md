@@ -39,6 +39,26 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **A whitespace-only access token was sent as `Bearer    ` instead of being repaired.** The
+  damaged-grant repair added earlier in this section tested the stored access token for
+  _emptiness_, so `''` healed itself and `'  '` did not — and a token of spaces or a stray newline
+  reaches the store exactly the same way, through a backend that built the field by concatenation
+  or a value round-tripped through a text column. The rule is now blankness, which is what the
+  Kotlin SDK has always used here.
+
+  The repair also names the blank token as the stale one when it asks for a refresh. It passed `''`
+  before, which was accidentally correct only while the damaged value could only ever be `''`: the
+  refresh compares the token it reads from the store against that value to spot a caller who
+  arrived after somebody else's refresh, so a value that was never stored makes every such caller
+  look raced and hand back the damaged grant unrepaired.
+
+  Two neighbouring places take the same rule. A **refresh token that is only whitespace is refused
+  locally** with `invalidToken` rather than presented — the repair path leads straight to it, the
+  request cannot succeed, and sending it marks the value as presented, so a timeout would refuse a
+  grant that was never renewable. And a **token response whose access token is only whitespace is
+  rejected as malformed** rather than stored, where it would defer the failure to the next request
+  and look there like a rejected grant.
+
 - **The cache was unbounded by default, and it is an encrypted database on a user's phone.**
   `CachePolicy.maxEntries` existed but the default policy omitted it, so nothing ever evicted: the
   store gained a row for every identifier ever checked and lost one only to expiry — and a HIGH

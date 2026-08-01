@@ -295,6 +295,11 @@ backend handed back without validating it. That refreshes rather than sending `B
 refused. A grant that is missing entirely still throws `invalidToken` and tells you to call
 `authorize()`.
 
+**Blank means whitespace as well as empty**, in both directions: a token of spaces or a stray
+newline is repaired the same way `''` is, a refresh token that is only whitespace is refused
+locally rather than presented to the server, and a token response carrying a whitespace access
+token is rejected as malformed instead of being stored. All four Tracive SDKs use the same rule.
+
 ## Public and confidential clients
 
 `ClientType.PUBLIC` (the default): the SDK performs the token exchange and stores the grant.
