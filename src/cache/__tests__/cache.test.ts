@@ -128,6 +128,37 @@ describe('InMemoryCheckCache', () => {
     expect(await cache.read(OTHER_KEY)).toBeDefined();
   });
 
+  /**
+   * The default policy used to omit `maxEntries` entirely, which meant nothing ever evicted: the
+   * cache gained a row for every identifier ever checked and lost one only to expiry, and a HIGH
+   * verdict is held for thirty days.
+   */
+  it('bounds the cache at 5000 entries under the default policy', async () => {
+    const cache = new InMemoryCheckCache({ clock: new FakeClock() });
+    for (let i = 0; i < 5_001; i++) {
+      await cache.write(result(), CheckCacheKey.fromSearchQueryIndex(`PHONE_+62812${i}`));
+    }
+    expect(await cache.count()).toBe(5_000);
+    expect(CachePolicy.default.maxEntries).toBe(5_000);
+  });
+
+  /**
+   * Eviction order, and it is the opposite of write order whenever a long-lived verdict was
+   * stored before a short-lived one. Dropping the HIGH result here would throw away thirty days
+   * of paid-for answer to keep a NONE one that expires by itself in an hour.
+   */
+  it('evicts the entry closest to expiry, not the one written first', async () => {
+    const cache = new InMemoryCheckCache({
+      policy: CachePolicy.create({ maxEntries: 1 }),
+      clock: new FakeClock(),
+    });
+    await cache.write(result({ riskTier: 'HIGH' }), KEY);
+    await cache.write(result({ riskTier: 'NONE' }), OTHER_KEY);
+
+    expect(await cache.read(KEY)).toBeDefined();
+    expect(await cache.read(OTHER_KEY)).toBeUndefined();
+  });
+
   it('prunes expired entries', async () => {
     const clock = new FakeClock();
     const cache = new InMemoryCheckCache({ clock });
@@ -242,6 +273,31 @@ describe('PersistentCheckCache', () => {
     await cache.write(result({ fetchedAt: new Date(clock.nowMs() + 1000) }), OTHER_KEY);
     expect(await cache.count()).toBe(1);
     expect(store.rows.has(OTHER_KEY.hex)).toBe(true);
+  });
+
+  /**
+   * The cap evicts by remaining life, not by age. Keeping the newer row instead, which is what
+   * ordering by fetch time did, discards a thirty-day HIGH verdict in favour of a NONE one that
+   * expires on its own within the hour — the more expensive of the two to have to buy again.
+   */
+  it('evicts the row closest to expiry rather than the one fetched earliest', async () => {
+    const store = new FakeCheckCacheStore();
+    const clock = new FakeClock();
+    const cache = new PersistentCheckCache({
+      store,
+      keyStore: new InMemoryCacheKeyStore({ random: fixedRandom() }),
+      clock,
+      policy: CachePolicy.create({ maxEntries: 1 }),
+      cipher: new AesGcmCacheCipher({ dataKey: new Uint8Array(32).fill(3), random: fixedRandom() }),
+    });
+    await cache.write(result({ riskTier: 'HIGH', fetchedAt: new Date(clock.nowMs()) }), KEY);
+    await cache.write(
+      result({ riskTier: 'NONE', fetchedAt: new Date(clock.nowMs() + 1000) }),
+      OTHER_KEY,
+    );
+
+    expect(store.rows.has(KEY.hex)).toBe(true);
+    expect(store.rows.has(OTHER_KEY.hex)).toBe(false);
   });
 
   it('clears everything', async () => {

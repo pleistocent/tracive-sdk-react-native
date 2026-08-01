@@ -53,11 +53,15 @@ interface CheckCacheStore {
   deleteWhere(criteria: {
     expiredBeforeMs?: number;
     all?: boolean;
-    keepNewest?: number;
+    keepLongestLived?: number;
   }): Promise<number>;
   count?(): Promise<number>; // optional; only CheckCache.count() needs it
 }
 ```
+
+`keepLongestLived: n` keeps the `n` rows with the most life left and deletes the rest — order by
+`expires_at_ms` descending, breaking a tie with `fetched_at_ms` descending. Both shipped adapters
+build that statement from `DELETE_WHERE_SQL`, which is exported for yours to use as well.
 
 Everything crossing it is opaque: a hex digest, an encrypted blob and two integer timestamps. Your
 store never sees an identifier, a risk tier or a report count.
@@ -66,7 +70,7 @@ store never sees an identifier, a risk tier or a report count.
 const cache = await PersistentCheckCache.open({
   store: yourStore,
   keyStore: yourSecureKeyStore,
-  policy: CachePolicy.create({ maxEntries: 5000 }),
+  policy: CachePolicy.create({ maxEntries: 20_000 }), // 5000 by default
   // Only on a runtime with no global `crypto`. The same port `TraciveClient` takes; the cache
   // needs it for the per-record GCM nonce, and `openExpoCheckCache`/`openBareCheckCache` accept
   // it too.
@@ -100,6 +104,22 @@ keep being served for the rest of its thirty days.
 
 `fetchedAt` is stamped from the same clock that measures freshness, so a device with a skewed system
 time cannot produce an entry that is fresh against one clock and stale against another.
+
+## How many entries are kept
+
+`maxEntries` defaults to **5000**, the same figure the Flutter SDK uses, and the cap is enforced on
+every write and by `prune()`. Expiry alone does not bound the database: a HIGH verdict is held for
+thirty days, so without a cap an encrypted store on a user's phone gains a row for every identifier
+ever checked and loses one only to time.
+
+Eviction drops the entries **closest to expiry**, not the least recently used and not the oldest.
+Those rows have the least value left — a one-hour `NONE` verdict goes before a thirty-day `HIGH`
+one, which is also the more expensive of the two to have to buy again. LRU would mean a write on
+every cache hit, which turns the cheap path into the expensive one. The Swift and Flutter SDKs evict
+in the same order.
+
+Raise the number if 5000 rows is too few for your app. There is no way to switch the cap off through
+`CachePolicy.create()` — an `undefined` override means "not overridden" — and that is deliberate.
 
 ## What is never cached
 

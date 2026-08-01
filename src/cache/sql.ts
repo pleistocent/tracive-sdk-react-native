@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS tracive_check_cache_expires_at
 export interface DeleteCriteria {
   expiredBeforeMs?: number;
   all?: boolean;
-  keepNewest?: number;
+  keepLongestLived?: number;
 }
 
 export function DELETE_WHERE_SQL(
@@ -34,12 +34,18 @@ export function DELETE_WHERE_SQL(
       params: [criteria.expiredBeforeMs],
     };
   }
-  if (criteria.keepNewest !== undefined) {
+  if (criteria.keepLongestLived !== undefined) {
+    // The rows kept are the ones with the most life left, so the rows evicted are the ones
+    // closest to expiry — the least valuable and the soonest to disappear on their own. The
+    // fetch time is only the tie-break, and the index on `expires_at_ms` already serves the
+    // leading term. Ordering by fetch time alone, as this did, evicts by age instead: a
+    // thirty-day HIGH verdict is dropped for a one-hour NONE one that arrived later.
     return {
       sql:
         'DELETE FROM tracive_check_cache WHERE key_hex NOT IN (' +
-        'SELECT key_hex FROM tracive_check_cache ORDER BY fetched_at_ms DESC LIMIT ?)',
-      params: [criteria.keepNewest],
+        'SELECT key_hex FROM tracive_check_cache ' +
+        'ORDER BY expires_at_ms DESC, fetched_at_ms DESC LIMIT ?)',
+      params: [criteria.keepLongestLived],
     };
   }
   return undefined;

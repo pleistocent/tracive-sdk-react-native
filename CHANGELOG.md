@@ -39,6 +39,28 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **The cache was unbounded by default, and it is an encrypted database on a user's phone.**
+  `CachePolicy.maxEntries` existed but the default policy omitted it, so nothing ever evicted: the
+  store gained a row for every identifier ever checked and lost one only to expiry — and a HIGH
+  verdict is held for thirty days, so expiry is no bound at all on a busy app. The default is now
+  **5000 entries**, the figure the Flutter SDK already used, enforced on every write and by
+  `prune()`. Raise it if your app needs more; `CachePolicy.create()` cannot switch it off, which is
+  deliberate.
+
+  **Eviction now drops the entries closest to expiry** rather than the oldest, in memory and on
+  disk alike. Those rows have the least value left: a one-hour `NONE` verdict goes before a
+  thirty-day `HIGH` one, which is also the more expensive of the two to have to buy again. Evicting
+  by age is the opposite choice whenever a long-lived verdict was stored before a short-lived one,
+  and with no default cap it had never run in a shipping configuration. The Swift and Flutter SDKs
+  evict in the same order.
+
+  The `deleteWhere` criterion that expresses it is renamed from `keepNewest` to
+  `keepLongestLived`, because it no longer means what the old name said: order by `expires_at_ms`
+  descending, breaking a tie with `fetched_at_ms` descending. Both shipped adapters build the
+  statement from `DELETE_WHERE_SQL` and needed no change. **A custom `CheckCacheStore` that
+  implements `deleteWhere` itself must be updated** — an unrecognised criterion deletes nothing, so
+  the cap would silently stop being enforced.
+
 - **A refresh token could be presented to the server twice, and re-presenting one costs the whole
   grant.** The single-flight latch only ever answered simultaneous callers. The hazard it cannot see
   is sequential: a refresh that fails with no response at all — a socket timeout, a connection

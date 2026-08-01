@@ -10,10 +10,16 @@ export interface CheckCacheStore {
   get(keyHex: string): Promise<CachedRow | undefined>;
   put(row: CachedRow): Promise<void>;
   delete(keyHex: string): Promise<void>;
+  /**
+   * `keepLongestLived: n` keeps the `n` rows with the most life left and deletes the rest, so
+   * eviction takes the rows closest to expiry first. Order by `expires_at_ms` descending and use
+   * `fetched_at_ms` descending to break a tie; `DELETE_WHERE_SQL` in `sql.ts` is the reference
+   * statement, and both shipped adapters use it verbatim.
+   */
   deleteWhere(criteria: {
     expiredBeforeMs?: number;
     all?: boolean;
-    keepNewest?: number;
+    keepLongestLived?: number;
   }): Promise<number>;
   /**
    * Optional fifth method, and the only one that is. `CheckCache.count()` cannot be derived from

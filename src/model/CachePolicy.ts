@@ -14,7 +14,23 @@ export interface CachePolicy {
   readonly noneTtlSeconds: number;
   /** The fleet-wide invalidation lever. Leave it on. */
   readonly honorsServerTtlOverride: boolean;
-  /** `undefined` means unbounded. */
+  /**
+   * The cap on stored entries, enforced on every write and by `prune()`.
+   *
+   * It defaults to 5000, the same number the Flutter SDK uses. It used to be absent by default,
+   * which meant unbounded: an encrypted database on a user's phone gaining a row for every
+   * identifier ever checked and never losing one, for as long as the app stayed installed. A
+   * thirty-day HIGH TTL means expiry alone does not bound it either.
+   *
+   * Eviction drops the entries CLOSEST TO EXPIRY first, because those have the least value left:
+   * a one-hour NONE verdict goes before a thirty-day HIGH one, which is also the more expensive
+   * of the two to have to buy again. It is deliberately not least-recently-used — LRU needs a
+   * write on every cache hit, which turns the cheap path into the expensive one.
+   *
+   * `undefined` still means unbounded, but `create()` cannot get you there: an override of
+   * `undefined` is treated as "not overridden". Writing the policy object out by hand and
+   * omitting the field is the only way to ask for an unbounded cache, which is intentional.
+   */
   readonly maxEntries?: number;
 }
 
@@ -25,6 +41,7 @@ const DEFAULT_POLICY: CachePolicy = {
   cautionTtlSeconds: 86_400,
   noneTtlSeconds: 3_600,
   honorsServerTtlOverride: true,
+  maxEntries: 5_000,
 };
 
 const DISABLED_POLICY: CachePolicy = { ...DEFAULT_POLICY, enabled: false };

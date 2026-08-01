@@ -169,7 +169,7 @@ export class PersistentCheckCache implements CheckCache {
   async #enforceMaxEntries(): Promise<number> {
     const max = this.policy.maxEntries;
     if (max === undefined) return 0;
-    return this.#guard('storageFailure', () => this.#store.deleteWhere({ keepNewest: max }));
+    return this.#guard('storageFailure', () => this.#store.deleteWhere({ keepLongestLived: max }));
   }
 
   async #resolveCipher(): Promise<CacheCipher> {

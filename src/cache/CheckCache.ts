@@ -69,7 +69,8 @@ export class NoOpCheckCache implements CheckCache {
 interface MemoryEntry {
   readonly result: CheckResult;
   readonly expiresAtMs: number;
-  readonly storedAtMs: number;
+  /** A write counter, not a timestamp: it only orders entries against each other. */
+  readonly storedSequence: number;
 }
 
 /**
@@ -124,7 +125,7 @@ export class InMemoryCheckCache implements CheckCache {
     this.#entries.set(key.hex, {
       result: cacheable,
       expiresAtMs: cacheable.fetchedAt.getTime() + ttlSeconds * 1000,
-      storedAtMs: this.#sequence++,
+      storedSequence: this.#sequence++,
     });
     void this.#evictOverflow();
     return Promise.resolve();
@@ -156,10 +157,22 @@ export class InMemoryCheckCache implements CheckCache {
     return Promise.resolve(this.#entries.size);
   }
 
+  /**
+   * Evicts down to `policy.maxEntries`, dropping the entries closest to expiry first and using
+   * the write order only to break a tie. The same order the SQL store uses, so a partner cannot
+   * see one rule in memory and a different one on disk.
+   *
+   * Write order used to be the whole rule, and it is the opposite choice whenever a long-lived
+   * verdict was stored before a short-lived one: a thirty-day HIGH result written this morning
+   * was evicted to make room for a one-hour NONE result written this afternoon, which then
+   * expired by itself an hour later. See `CachePolicy.maxEntries`.
+   */
   #evictOverflow(): number {
     const max = this.policy.maxEntries;
     if (max === undefined || this.#entries.size <= max) return 0;
-    const ordered = [...this.#entries.entries()].sort((a, b) => a[1].storedAtMs - b[1].storedAtMs);
+    const ordered = [...this.#entries.entries()].sort(
+      (a, b) => a[1].expiresAtMs - b[1].expiresAtMs || a[1].storedSequence - b[1].storedSequence,
+    );
     const excess = this.#entries.size - max;
     for (let i = 0; i < excess; i++) {
       const victim = ordered[i];

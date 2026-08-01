@@ -155,7 +155,7 @@ export class FakeCheckCacheStore implements CheckCacheStore {
   deleteWhere(criteria: {
     expiredBeforeMs?: number;
     all?: boolean;
-    keepNewest?: number;
+    keepLongestLived?: number;
   }): Promise<number> {
     if (criteria.all === true) {
       const removed = this.rows.size;
@@ -172,9 +172,13 @@ export class FakeCheckCacheStore implements CheckCacheStore {
       }
       return Promise.resolve(removed);
     }
-    if (criteria.keepNewest !== undefined) {
-      const ordered = [...this.rows.values()].sort((a, b) => b.fetchedAtMs - a.fetchedAtMs);
-      const doomed = ordered.slice(criteria.keepNewest);
+    if (criteria.keepLongestLived !== undefined) {
+      // The same order as `DELETE_WHERE_SQL`: most life left first, so the rows sliced off the
+      // end — the ones deleted — are the closest to expiry.
+      const ordered = [...this.rows.values()].sort(
+        (a, b) => b.expiresAtMs - a.expiresAtMs || b.fetchedAtMs - a.fetchedAtMs,
+      );
+      const doomed = ordered.slice(criteria.keepLongestLived);
       for (const row of doomed) this.rows.delete(row.keyHex);
       return Promise.resolve(doomed.length);
     }

@@ -122,8 +122,12 @@ describe('the shared SQL', () => {
       sql: 'DELETE FROM tracive_check_cache WHERE expires_at_ms <= ?',
       params: [5],
     });
-    expect(DELETE_WHERE_SQL({ keepNewest: 3 })?.params).toEqual([3]);
-    expect(DELETE_WHERE_SQL({ keepNewest: 3 })?.sql).toContain('ORDER BY fetched_at_ms DESC');
+    expect(DELETE_WHERE_SQL({ keepLongestLived: 3 })?.params).toEqual([3]);
+    // Most life left first, so the rows outside the cap — the ones deleted — are the closest to
+    // expiry. Ordering by fetch time evicts by age instead, which is a different row.
+    expect(DELETE_WHERE_SQL({ keepLongestLived: 3 })?.sql).toContain(
+      'ORDER BY expires_at_ms DESC, fetched_at_ms DESC',
+    );
     expect(DELETE_WHERE_SQL({})).toBeUndefined();
   });
 
