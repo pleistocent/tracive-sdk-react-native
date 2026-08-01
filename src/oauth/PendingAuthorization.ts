@@ -62,10 +62,35 @@ export function serializePendingAuthorization(pending: PendingAuthorization): st
   return JSON.stringify(pending);
 }
 
+/**
+ * Every field is validated, because every field decides something and a damaged one decides it
+ * wrongly rather than loudly.
+ *
+ * `createdAtMs` is the one that used to be trusted, and it is the one whose absence is silent.
+ * `TraciveOAuth` computes `(now - createdAtMs) / 1000` and compares that against the maximum age;
+ * with the field missing the subtraction is `NaN`, and every comparison against `NaN` is `false`,
+ * so the record reads as fresh no matter how old it is. The expiry that is supposed to end an
+ * abandoned attempt never fires, the PKCE verifier stays on the device, and a code that arrives
+ * days later is still redeemed. Nothing throws and nothing is logged.
+ *
+ * `redirectUri` is validated for the same reason at one remove: it is sent as `redirect_uri` in
+ * the token exchange, and a missing one turns a redeemable code into a server-side rejection.
+ *
+ * A record that fails any of these is reported as absent, exactly as unparseable JSON already is.
+ * Both mean the same thing to a caller — there is nothing here that can finish an authorization —
+ * and `handleCallback` already has an answer for that.
+ */
 export function deserializePendingAuthorization(json: string): PendingAuthorization | undefined {
   try {
     const parsed = JSON.parse(json) as PendingAuthorization;
-    if (typeof parsed?.state !== 'string' || typeof parsed?.codeVerifier !== 'string') {
+    if (
+      typeof parsed?.state !== 'string' ||
+      typeof parsed?.codeVerifier !== 'string' ||
+      typeof parsed?.redirectUri !== 'string' ||
+      // `Number.isFinite` rather than a `typeof` test: it rejects a non-number without coercing
+      // one, and it also rejects the `NaN` and `Infinity` that a `typeof` test would let through.
+      !Number.isFinite(parsed?.createdAtMs)
+    ) {
       return undefined;
     }
     return parsed;

@@ -206,6 +206,67 @@ describe('a pending authorization across a process restart', () => {
   });
 });
 
+/**
+ * Reachable exactly when an integrator does the RIGHT thing and installs a persistent store. The
+ * in-memory default never holds a record across the write that damages it, so a partial flush, a
+ * truncated keychain item or a record written by an older layout only ever surfaces on a device
+ * that is configured properly.
+ */
+describe('a damaged pending record', () => {
+  it('is unreadable whichever field went missing, rather than partly trusted', () => {
+    const intact = {
+      state: 'the-state',
+      codeVerifier: 'the-verifier',
+      redirectUri: 'https://your.app/oauth/callback',
+      createdAtMs: 1_700_000_000_000,
+    };
+    expect(deserializePendingAuthorization(JSON.stringify(intact))).toEqual(intact);
+
+    for (const field of ['state', 'codeVerifier', 'redirectUri', 'createdAtMs'] as const) {
+      const damaged: Record<string, unknown> = { ...intact };
+      delete damaged[field];
+      expect(deserializePendingAuthorization(JSON.stringify(damaged))).toBeUndefined();
+    }
+
+    // A timestamp of the wrong type is the same damage wearing a plausible shape.
+    for (const createdAtMs of ['1700000000000', null, Number.NaN]) {
+      expect(
+        deserializePendingAuthorization(JSON.stringify({ ...intact, createdAtMs })),
+      ).toBeUndefined();
+    }
+  });
+
+  /**
+   * A record with no timestamp used to be immortal. `(now - undefined) / 1000` is `NaN`, every
+   * comparison against `NaN` is false, so the ten-minute expiry never fired at any age — and the
+   * verifier was still spent on whatever code eventually turned up.
+   */
+  it('does not redeem a code against a record whose age cannot be computed', async () => {
+    const device = newDevice();
+    const clock = new FakeClock();
+    const { oauth, transport, opened } = session({
+      pendingStore: new PersistentPendingStore(device),
+      clock,
+    });
+
+    await oauth.authorize();
+    const state = stateOf(opened[0] ?? '');
+
+    const stored = JSON.parse(device.slot ?? '{}') as Record<string, unknown>;
+    delete stored.createdAtMs;
+    device.slot = JSON.stringify(stored);
+    clock.advance(30 * 24 * 3600 * 1000);
+
+    transport.enqueue(grantResponse());
+    const result = await oauth.handleCallback(redirect('code=abc', state));
+
+    expect(result.type).toBe('failed');
+    // Nothing was exchanged: a month-old attempt must not be able to hide behind a missing field.
+    expect(transport.requests).toHaveLength(0);
+    expect(await oauth.isAuthorized()).toBe(false);
+  });
+});
+
 describe('the maximum age of a pending record', () => {
   /**
    * Ten minutes is the authorization code's own recommended maximum lifetime (RFC 6749 4.1.2), and
