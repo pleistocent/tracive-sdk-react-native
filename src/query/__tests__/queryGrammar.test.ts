@@ -68,7 +68,6 @@ describe('shared grammar fixture', () => {
 const PENDING_REJECTIONS: Readonly<Record<string, string | null>> = {
   'crypto-empty-address': 'empty_value',
   'username-empty-platform': 'empty_value',
-  'email-not-an-address': null,
 };
 
 /** Same idea for the record-key guard: the value maps to what the guard returns today. */
@@ -111,6 +110,46 @@ describe('rejections', () => {
       expect((thrown as TraciveQueryError).reason).toBe(expected);
     },
   );
+});
+
+/** The reason token a factory rejected with, or `undefined` when it built a query. */
+function rejectionOf(build: () => unknown): string | undefined {
+  try {
+    build();
+    return undefined;
+  } catch (error) {
+    if (error instanceof TraciveQueryError) return error.reason;
+    throw error;
+  }
+}
+
+describe('the e-mail shape rule', () => {
+  it('rejects a value containing no @', () => {
+    // `EMAIL_budi` is a legal record key, so the server looks it up, misses, and bills for it.
+    // The token is asserted as a literal rather than through a constant: it is a cross-SDK wire
+    // contract, so a rename has to fail this test instead of quietly redefining the contract.
+    expect(rejectionOf(() => TraciveQuery.email('budi'))).toBe('not_an_email');
+  });
+
+  it('still reports an all-whitespace value as empty rather than as a shape failure', () => {
+    expect(rejectionOf(() => TraciveQuery.email('   '))).toBe('empty_value');
+  });
+
+  it('is an @-presence check and deliberately not an address grammar', () => {
+    // Over-validating is the worse failure: it refuses addresses the server would have matched,
+    // and a refused lookup is an answer the caller never gets. Every value here is odd, legal,
+    // and none of this SDK's business.
+    for (const value of [
+      'a@b',
+      'budi@localhost',
+      'a@b@c',
+      '"odd name"@example.com',
+      'x@[10.0.0.1]',
+      '@budi',
+    ]) {
+      expect(rejectionOf(() => TraciveQuery.email(value))).toBeUndefined();
+    }
+  });
 });
 
 describe('record-key guard cases', () => {

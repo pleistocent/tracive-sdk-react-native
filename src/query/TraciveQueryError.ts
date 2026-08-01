@@ -6,6 +6,7 @@
  */
 export type QueryRejectionReason =
   | 'not_e164'
+  | 'not_an_email'
   | 'country_not_alpha3'
   | 'empty_account_id'
   | 'empty_bank_code'

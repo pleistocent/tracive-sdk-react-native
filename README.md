@@ -213,6 +213,12 @@ strings of the same type cannot be silently transposed at the call site.
 **Phone numbers must be E.164.** The server cannot up-convert a local number, so `081234567891`
 would become a different entity, miss, and still be billed. `TraciveQuery.phone` rejects it.
 
+**An e-mail must contain an `@`.** The server applies no shape validation, so `budi` is a perfectly
+legal key: it would be looked up, miss, and still be billed. `TraciveQuery.email` rejects it with
+reason `not_an_email`. The check is deliberately nothing more than that — a stricter address grammar
+would start refusing addresses the server would have matched, and a refused lookup is an answer you
+never get.
+
 **There is no `domain()` builder**, and this is deliberate rather than an omission. The Tracive API
 indexes exactly five identifier types, so a domain key would match nothing and the miss would still
 cost a credit. Domain checking is planned for a future release built on similarity search, which

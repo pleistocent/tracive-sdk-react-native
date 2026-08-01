@@ -11,6 +11,14 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Fixed
 
+- **`TraciveQuery.email` rejects a value with no `@`, so a doomed lookup is no longer billed.** It
+  previously rejected only an empty value, so `email('budi')` built `EMAIL_budi` and sent it. The
+  server applies no shape validation to an e-mail — that is a legal record key, so it is looked up,
+  missed, and charged for. Client-side rejection is the only thing that prevents the charge, exactly
+  as `phone()` already does with its E.164 test. The new reason is `not_an_email`. The check is an
+  `@`-presence test and deliberately not an address grammar: over-validating would refuse addresses
+  the server would have matched, which is the worse failure of the two.
+
 - **The SDK now opens the install link itself.** `authorize()` used to report `appNotInstalled` and
   open nothing, leaving the partner app to call `installUrlForDisplay()` and open the page. The
   Kotlin, Swift and Flutter SDKs all open the link and return the same result, so this was a

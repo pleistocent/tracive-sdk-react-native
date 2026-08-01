@@ -43,10 +43,21 @@ export function foldPhone(value: string): string {
   return folded;
 }
 
-/** NFC -> lowercase -> trim. */
+/**
+ * NFC -> lowercase -> trim, then require an `@`.
+ *
+ * The `@` test is deliberately the whole of the shape check. The server applies NO shape
+ * validation to an e-mail: `EMAIL_budi` is a legal record key, so it is looked up, missed, and
+ * billed — the same commercial hole {@link foldPhone} closes with its E.164 test, and client-side
+ * rejection is the only thing that closes it. Anything stricter than "contains an `@`" would start
+ * refusing addresses the server would happily match, and a refused lookup is an answer the caller
+ * never gets. Local parts may be quoted, domains may be a bare host or a bracketed literal, and
+ * none of that is this SDK's business.
+ */
 export function foldEmail(value: string): string {
   const folded = foldedLowerCase(normalizeNfc(value)).trim();
   if (folded === '') throw new TraciveQueryError('empty_value');
+  if (!folded.includes('@')) throw new TraciveQueryError('not_an_email');
   return folded;
 }
 
