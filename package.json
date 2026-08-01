@@ -75,8 +75,9 @@
     "test:coverage": "jest --coverage",
     "fixture:verify": "node scripts/verify-fixture.js",
     "hygiene": "node scripts/check-hygiene.js",
+    "audit:runtime": "npm audit --omit=dev --audit-level=high",
     "check:packaging": "npm pack --silent && publint --strict && attw --pack . --ignore-rules cjs-resolves-to-esm no-resolution untyped-resolution",
-    "verify": "npm run hygiene && npm run fixture:verify && npm run typecheck && npm run lint && npm test && npm run build && npm run check:packaging"
+    "verify": "npm run hygiene && npm run fixture:verify && npm run typecheck && npm run lint && npm test && npm run build && npm run check:packaging && npm run audit:runtime"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",

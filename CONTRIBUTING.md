@@ -5,8 +5,8 @@ npm install
 npm run verify
 ```
 
-`verify` runs, in order: hygiene, fixture pinning, typecheck, lint, tests, build, packaging checks.
-All of it must pass before anything is pushed.
+`verify` runs, in order: hygiene, fixture pinning, typecheck, lint, tests, build, packaging checks
+and a runtime-dependency audit. All of it must pass before anything is pushed.
 
 ---
 

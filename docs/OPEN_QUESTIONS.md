@@ -180,3 +180,9 @@ not part of this package's runtime. The two dependencies that do ship — `@nobl
 `@noble/ciphers` — have zero transitive dependencies between them and the rest of npm.
 
 Re-check when Expo releases a `config-plugins` that has moved off the affected `xcode` release.
+
+CI runs `npm audit --omit=dev --audit-level=high` (`npm run audit:runtime`), so a NEW high or
+critical advisory in something that actually ships fails the build rather than waiting for
+somebody to notice this page has gone stale. The scope is deliberate: gating on the full dev tree
+would fail every build on the chain above, which trains everyone to ignore the step. The dev-tree
+advisories stay a documented judgement, and this paragraph is where that judgement is recorded.

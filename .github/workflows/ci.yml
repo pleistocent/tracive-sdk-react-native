@@ -46,6 +46,13 @@ jobs:
       # an ESM-only library and one no unit test can see.
       - run: npm run check:packaging
 
+      # The RUNTIME dependency surface only: two packages with no transitive dependencies between
+      # them. `--omit=dev` is the honest scope, not a way to be quiet — the known advisory in the
+      # Expo config-plugin toolchain is a build-time concern documented in
+      # docs/OPEN_QUESTIONS.md, and failing every build on it would train everyone to ignore this
+      # step. A NEW high or critical advisory in something that actually ships fails the build.
+      - run: npm run audit:runtime
+
 # Not yet in this workflow, and deliberately not faked: the on-device grammar job. A green Jest run
 # proves nothing about the JavaScript engine that actually ships — Jest runs on Node with full ICU.
 # Running the same fixture inside an app on an Android emulator is the only check that can fail for
