@@ -30,6 +30,7 @@ import { TraciveOAuth } from '../TraciveOAuth';
 const CONFIG: OAuthConfiguration = {
   clientId: 'partner-app',
   redirectUri: 'https://your.app/oauth/callback',
+  partnerUserId: 'partner-user-1',
 };
 
 /** Records the exact order of pending-store writes relative to the launch. */

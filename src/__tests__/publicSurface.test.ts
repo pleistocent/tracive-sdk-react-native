@@ -58,6 +58,7 @@ describe('there is no API key anywhere', () => {
       mode: TraciveMode.oauth({
         clientId: 'partner-app',
         redirectUri: 'https://your.app/oauth/callback',
+        partnerUserId: 'partner-user-1',
       }),
       transport,
       clock: new FakeClock(),

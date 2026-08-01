@@ -30,6 +30,7 @@ describe('TraciveMode', () => {
     const oauth = TraciveMode.oauth({
       clientId: 'a',
       redirectUri: 'https://your.app/oauth/callback',
+      partnerUserId: 'partner-user-1',
     });
     expect(oauth.type).toBe('oauth');
     const proxy = TraciveMode.proxy({ baseUrl: 'https://gateway.your.app' });

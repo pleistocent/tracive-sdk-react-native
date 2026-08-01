@@ -192,6 +192,7 @@ describe('redaction is wired into the shipping code paths', () => {
       mode: TraciveMode.oauth({
         clientId: 'partner-app',
         redirectUri: 'https://your.app/oauth/callback',
+        partnerUserId: 'partner-user-1',
       }),
       transport,
       clock: new FakeClock(),
@@ -218,6 +219,7 @@ describe('redaction is wired into the shipping code paths', () => {
       mode: TraciveMode.oauth({
         clientId: 'partner-app',
         redirectUri: 'https://your.app/oauth/callback',
+        partnerUserId: 'partner-user-1',
       }),
       transport,
       clock: new FakeClock(),

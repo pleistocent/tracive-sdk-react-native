@@ -37,7 +37,7 @@ function build(
     scopes: ['checks:read'],
   });
   const oauth = new TraciveOAuth({
-    mode: { clientId: 'partner-app', redirectUri: 'https://your.app/oauth/callback' },
+    mode: { clientId: 'partner-app', redirectUri: 'https://your.app/oauth/callback', partnerUserId: 'partner-user-1' },
     transport,
     clock,
     tokenStore,
@@ -46,6 +46,7 @@ function build(
     mode: TraciveMode.oauth({
       clientId: 'partner-app',
       redirectUri: 'https://your.app/oauth/callback',
+      partnerUserId: 'partner-user-1',
     }),
     transport,
     clock,
@@ -260,6 +261,7 @@ describe('signOut()', () => {
       mode: TraciveMode.oauth({
         clientId: 'partner-app',
         redirectUri: 'https://your.app/oauth/callback',
+        partnerUserId: 'partner-user-1',
       }),
       transport,
       clock,

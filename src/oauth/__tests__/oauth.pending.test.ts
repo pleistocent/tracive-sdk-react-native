@@ -21,6 +21,7 @@ import { TraciveOAuth } from '../TraciveOAuth';
 const CONFIG: OAuthConfiguration = {
   clientId: 'partner-app',
   redirectUri: 'https://your.app/oauth/callback',
+  partnerUserId: 'partner-user-1',
 };
 
 /**

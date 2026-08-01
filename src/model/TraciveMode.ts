@@ -18,7 +18,18 @@ export interface OAuthConfiguration {
    * still accepting any string.
    */
   readonly scopes?: readonly (TraciveScope | (string & {}))[];
-  readonly partnerUserId?: string;
+  /**
+   * The partner's own opaque id for this end user.
+   *
+   * **Required, and non-blank.** The Tracive app refuses a consent without one, client-side and
+   * before any network call, and by design returns no redirect at all — so your app is handed
+   * nothing to handle and no log anywhere records the attempt. It is also what the grant is keyed
+   * on: echoed back in `grant.revoked` and `grant.superseded` so you can map the event to your own
+   * customer, and what enforces one of your accounts to one Tracive account.
+   *
+   * Opaque — never a raw phone number or email, and never used as a credential.
+   */
+  readonly partnerUserId: string;
   /** Defaults to `'PUBLIC'`. */
   readonly clientType?: ClientType;
 }

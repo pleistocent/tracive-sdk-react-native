@@ -137,9 +137,12 @@ export function buildAuthorizeUrl(input: AuthorizeUrlInput): string {
   if (config.scopes !== undefined && config.scopes.length > 0) {
     params.push(['scope', config.scopes.join(' ')]);
   }
-  if (config.partnerUserId !== undefined) {
-    params.push(['partner_user_id', config.partnerUserId]);
-  }
+  // Always present, and as written. `OAuthConfiguration` requires it, and the value is stored on
+  // the grant and echoed back in `grant.revoked` — trimming it here would hand the partner back
+  // something other than what they sent. This used to test `!== undefined` only, so an empty
+  // string went out as `partner_user_id=` and the app rejected it exactly as it rejects an absent
+  // one.
+  params.push(['partner_user_id', config.partnerUserId]);
   return `${TraciveEnvironment.authorizeUrl(input.environment)}?${encodeQuery(params)}`;
 }
 

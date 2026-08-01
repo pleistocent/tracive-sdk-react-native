@@ -34,6 +34,7 @@ function build(options?: {
     mode: TraciveMode.oauth({
       clientId: 'partner-app',
       redirectUri: 'https://your.app/oauth/callback',
+      partnerUserId: 'partner-user-1',
     }),
     transport,
     clock: options?.clock ?? clock,
