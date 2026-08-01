@@ -1,4 +1,5 @@
 import { systemClock, type TraciveClock } from '../client/TraciveClock';
+import { defaultRandom, type TraciveRandom } from '../crypto/random';
 import { utf8Decode, utf8Encode } from '../crypto/utf8';
 import { CachePolicy } from '../model/CachePolicy';
 import { toCacheableCopy, type CheckResult } from '../model/CheckResult';
@@ -25,6 +26,14 @@ export interface PersistentCheckCacheOptions {
   policy?: CachePolicy;
   cipher?: CacheCipher;
   clock?: TraciveClock;
+  /**
+   * The CSPRNG the built-in cipher draws its GCM nonces from. Only consulted when no `cipher` is
+   * supplied. This exists because `random` is the documented escape hatch for a runtime with no
+   * global `crypto`, and it used to reach the key store and stop there — the cipher was always
+   * constructed without it, so an app relying on the escape hatch still hit `csprng_unavailable`
+   * on its first cache write.
+   */
+  random?: TraciveRandom;
   /** Part of the AAD, so bumping it invalidates every existing record by construction. */
   schemaVersion?: number;
 }
@@ -41,6 +50,7 @@ export class PersistentCheckCache implements CheckCache {
   readonly #keyStore: CacheKeyStore;
   readonly #clock: TraciveClock;
   readonly #schemaVersion: number;
+  readonly #random: TraciveRandom;
   #cipher: CacheCipher | undefined;
   #lastStoreError: CheckCacheError | undefined;
 
@@ -50,6 +60,7 @@ export class PersistentCheckCache implements CheckCache {
     this.#keyStore = options.keyStore;
     this.#clock = options.clock ?? systemClock;
     this.#schemaVersion = options.schemaVersion ?? 1;
+    this.#random = options.random ?? defaultRandom;
     this.#cipher = options.cipher;
   }
 
@@ -153,7 +164,7 @@ export class PersistentCheckCache implements CheckCache {
     if (this.#cipher !== undefined) return this.#cipher;
     try {
       const dataKey = await this.#keyStore.loadOrCreateDataKey();
-      this.#cipher = new AesGcmCacheCipher({ dataKey });
+      this.#cipher = new AesGcmCacheCipher({ dataKey, random: this.#random });
       return this.#cipher;
     } catch (cause) {
       const error =

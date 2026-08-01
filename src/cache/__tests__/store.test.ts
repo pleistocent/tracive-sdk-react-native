@@ -204,3 +204,41 @@ describe('PersistentCheckCache edge cases', () => {
     expect(cache.lastStoreError?.kind).toBe('dataKeyUnavailable');
   });
 });
+
+/**
+ * `random` is the documented escape hatch for a runtime with no global `crypto`. It reached the
+ * key store and stopped there: the cipher was always constructed without it, so an app that
+ * supplied one still hit `csprng_unavailable` on the first cache write.
+ */
+describe('the injected CSPRNG port', () => {
+  it('reaches the cipher the cache builds for itself', async () => {
+    let calls = 0;
+    const counting = {
+      randomBytes(length: number): Uint8Array {
+        calls += 1;
+        return fixedRandom(11).randomBytes(length);
+      },
+    };
+    const cache = await PersistentCheckCache.open({
+      store: new FakeCheckCacheStore(),
+      keyStore: new InMemoryCacheKeyStore({ random: fixedRandom() }),
+      clock: new FakeClock(),
+      random: counting,
+    });
+
+    const before = calls;
+    await cache.write(result(), KEY);
+    // The GCM nonce for that write came from the injected source, not from defaultRandom.
+    expect(calls).toBeGreaterThan(before);
+  });
+
+  it('is not required, and defaults without one', async () => {
+    const cache = await PersistentCheckCache.open({
+      store: new FakeCheckCacheStore(),
+      keyStore: new InMemoryCacheKeyStore({ random: fixedRandom() }),
+      clock: new FakeClock(),
+    });
+    await cache.write(result(), KEY);
+    expect(await cache.read(KEY)).toBeDefined();
+  });
+});

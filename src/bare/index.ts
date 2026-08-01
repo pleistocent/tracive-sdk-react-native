@@ -23,6 +23,7 @@ import {
 import type { CachedRow, CheckCacheStore } from '../cache/CheckCacheStore';
 import { PersistentCheckCache } from '../cache/PersistentCheckCache';
 import { CREATE_TABLE_SQL, DELETE_WHERE_SQL, toUint8Array } from '../cache/sql';
+import type { TraciveRandom } from '../crypto/random';
 import type { CachePolicy } from '../model/CachePolicy';
 import {
   deserializePendingAuthorization,
@@ -102,7 +103,10 @@ export function keychainPendingAuthorizationStore(options?: {
   };
 }
 
-export function keychainCacheKeyStore(options?: { service?: string }): CacheKeyStore {
+export function keychainCacheKeyStore(options?: {
+  service?: string;
+  random?: TraciveRandom;
+}): CacheKeyStore {
   const slot = keychainStringStore(
     options?.service ?? DEFAULT_DATA_KEY_SERVICE,
     'tracive-cache-key',
@@ -117,7 +121,7 @@ export function keychainCacheKeyStore(options?: { service?: string }): CacheKeyS
           // A corrupt key means the cache goes cold, not that the app fails.
         }
       }
-      const created = createDataKey();
+      const created = createDataKey(options?.random);
       await slot.write(encodeDataKey(created));
       return created;
     },
@@ -176,6 +180,8 @@ export async function openBareCheckCache(options?: {
   policy?: CachePolicy;
   databaseName?: string;
   service?: string;
+  /** Only needed on a runtime with no global `crypto`; see `TraciveClient`'s `random`. */
+  random?: TraciveRandom;
 }): Promise<CheckCache> {
   try {
     const store = await opSqliteCheckCacheStore(
@@ -183,10 +189,12 @@ export async function openBareCheckCache(options?: {
     );
     return await PersistentCheckCache.open({
       store,
-      keyStore: keychainCacheKeyStore(
-        options?.service === undefined ? {} : { service: options.service },
-      ),
+      keyStore: keychainCacheKeyStore({
+        ...(options?.service !== undefined ? { service: options.service } : {}),
+        ...(options?.random !== undefined ? { random: options.random } : {}),
+      }),
       ...(options?.policy !== undefined ? { policy: options.policy } : {}),
+      ...(options?.random !== undefined ? { random: options.random } : {}),
     });
   } catch (cause) {
     return new NoOpCheckCache(

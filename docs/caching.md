@@ -67,6 +67,10 @@ const cache = await PersistentCheckCache.open({
   store: yourStore,
   keyStore: yourSecureKeyStore,
   policy: CachePolicy.create({ maxEntries: 5000 }),
+  // Only on a runtime with no global `crypto`. The same port `TraciveClient` takes; the cache
+  // needs it for the per-record GCM nonce, and `openExpoCheckCache`/`openBareCheckCache` accept
+  // it too.
+  random: yourRandom,
 });
 ```
 

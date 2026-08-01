@@ -87,7 +87,10 @@ export function expoSecurePendingAuthorizationStore(options?: {
   };
 }
 
-export function expoCacheKeyStore(options?: { service?: string }): CacheKeyStore {
+export function expoCacheKeyStore(options?: {
+  service?: string;
+  random?: TraciveRandom;
+}): CacheKeyStore {
   const settings = secureStoreOptions(options?.service ?? DEFAULT_SERVICE);
   return {
     async loadOrCreateDataKey(): Promise<Uint8Array> {
@@ -100,7 +103,7 @@ export function expoCacheKeyStore(options?: { service?: string }): CacheKeyStore
           // and let every existing row fail to open and be dropped.
         }
       }
-      const created = createDataKey(expoRandom);
+      const created = createDataKey(options?.random ?? expoRandom);
       await SecureStore.setItemAsync(DATA_KEY_KEY, encodeDataKey(created), settings);
       return created;
     },
@@ -179,6 +182,8 @@ export async function openExpoCheckCache(options?: {
   policy?: CachePolicy;
   databaseName?: string;
   service?: string;
+  /** Only needed on a runtime with no global `crypto`; see `TraciveClient`'s `random`. */
+  random?: TraciveRandom;
 }): Promise<CheckCache> {
   try {
     const store = await expoSqliteCheckCacheStore(
@@ -186,10 +191,12 @@ export async function openExpoCheckCache(options?: {
     );
     return await PersistentCheckCache.open({
       store,
-      keyStore: expoCacheKeyStore(
-        options?.service === undefined ? {} : { service: options.service },
-      ),
+      keyStore: expoCacheKeyStore({
+        ...(options?.service !== undefined ? { service: options.service } : {}),
+        ...(options?.random !== undefined ? { random: options.random } : {}),
+      }),
       ...(options?.policy !== undefined ? { policy: options.policy } : {}),
+      ...(options?.random !== undefined ? { random: options.random } : {}),
     });
   } catch (cause) {
     return new NoOpCheckCache(
