@@ -136,4 +136,11 @@ describe('parseRedirectUri', () => {
   it('rejects a non-https redirect', () => {
     expect(() => parseRedirectUri('myapp://callback')).toThrow('https');
   });
+
+  it('rejects an authority carrying a port or userinfo', () => {
+    // `android:host` takes no port and an `applinks:` entry takes neither, so folding them in
+    // would write a manifest and an entitlement claiming a host nobody owns.
+    expect(() => parseRedirectUri('https://your.app:8443/cb')).toThrow();
+    expect(() => parseRedirectUri('https://user@your.app/cb')).toThrow();
+  });
 });

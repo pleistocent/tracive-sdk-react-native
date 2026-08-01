@@ -30,11 +30,27 @@ export interface RedirectTarget {
   readonly pathPrefix: string;
 }
 
+/**
+ * A bare host, or `undefined`/an error when the authority carries anything else.
+ *
+ * The authority is NOT the host. `https://user@your.app:8443/cb` has an authority of
+ * `user@your.app:8443`, and folding that into a host writes `android:host="your.app:8443"` and
+ * `applinks:your.app:8443` — neither of which is valid. Android takes a port in a separate
+ * `android:port` attribute and an associated-domains entry takes neither, so the link would
+ * simply never verify, silently, which is the whole failure mode this tooling exists to prevent.
+ *
+ * Rejecting is right rather than stripping: an OAuth redirect URI must be an https URL the app
+ * OWNS, and neither userinfo nor a non-default port can appear in one that an App Link or a
+ * Universal Link will ever verify. Silently dropping them would claim a different URL than the
+ * one the caller registered with the authorization server.
+ */
 export function parseRedirectUri(redirectUri: string): RedirectTarget | undefined {
   const match = /^https:\/\/([^/?#]+)([^?#]*)/.exec(redirectUri);
   if (match === null) return undefined;
+  const authority = match[1] ?? '';
+  if (authority === '' || authority.includes('@') || /:\d*$/.test(authority)) return undefined;
   const path = match[2] ?? '';
-  return { host: match[1] ?? '', pathPrefix: path === '' ? '/' : path };
+  return { host: authority, pathPrefix: path === '' ? '/' : path };
 }
 
 const QUERIES_BLOCK = `<queries>

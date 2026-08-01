@@ -85,8 +85,10 @@ export function runDoctor(input: {
       severity: 'error',
       code: 'redirect_uri_not_claimed',
       message:
-        `"${redirectUri}" is not an https URL. The Tracive authorization server matches the ` +
-        'registered https redirect exactly and rejects custom schemes outright.',
+        `"${redirectUri}" is not an https URL with a bare host. The Tracive authorization server ` +
+        'matches the registered https redirect exactly and rejects custom schemes outright, and ' +
+        'a userinfo or port in the authority cannot be expressed in an intent-filter host or an ' +
+        'associated-domains entry.',
     });
   }
   if (redirectUri === undefined) {

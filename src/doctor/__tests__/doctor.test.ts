@@ -63,6 +63,16 @@ describe('parseRedirectUri', () => {
     expect(parseRedirectUri('myapp://callback')).toBeUndefined();
     expect(parseRedirectUri('http://your.app/cb')).toBeUndefined();
   });
+
+  it('rejects an authority carrying a port or userinfo rather than folding it into the host', () => {
+    // `android:host` takes no port — that is a separate attribute — and an `applinks:` entry
+    // takes neither. Folding either into the host produces a manifest and an entitlement that
+    // claim a host nobody owns, and the link then simply never verifies.
+    expect(parseRedirectUri('https://your.app:8443/cb')).toBeUndefined();
+    expect(parseRedirectUri('https://user@your.app/cb')).toBeUndefined();
+    expect(parseRedirectUri('https://user:pass@your.app:8443/cb')).toBeUndefined();
+    expect(parseRedirectUri('https:///cb')).toBeUndefined();
+  });
 });
 
 describe('the Android manifest check', () => {
