@@ -576,6 +576,21 @@ describe('the SDK constants', () => {
     expect(TraciveOAuth.defaultInstallUrl).toBe('https://tracive.chottu.link/install');
   });
 
+  it('refuses a blank partnerUserId, in every form', () => {
+    // TypeScript makes the field required, which is worth nothing to a JavaScript caller or to a
+    // value that arrived from a form or a config file. Left unchecked it went out as
+    // `partner_user_id=`, which the Tracive app rejects client-side with no redirect — so the
+    // partner app receives nothing at all. Kotlin, Swift and Flutter all reject at construction.
+    for (const blank of ['', '   ', '\t\n']) {
+      expect(
+        () =>
+          new TraciveOAuth({
+            mode: { clientId: 'c', redirectUri: 'https://p.test/cb', partnerUserId: blank },
+          }),
+      ).toThrow(TraciveConfigurationError);
+    }
+  });
+
   it('probes the bare scheme, and the sandbox one in sandbox', () => {
     // This assertion used to read `tracive://authorize`, under a test named
     // "matches the sibling SDKs" — and no sibling used it. Kotlin checks the package id, Swift

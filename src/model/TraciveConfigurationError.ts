@@ -14,6 +14,8 @@
  * - `redirect_uri_not_claimed` — no intent-filter / associated domain claims the redirect host.
  * - `blank_install_url` — the `installUrl` override is blank, which is refused rather than
  *   quietly replaced with the built-in install link.
+ * - `blank_partner_user_id` — `partnerUserId` is blank. The authorization request must carry
+ *   one; the Tracive app refuses a consent without it client-side, and returns no redirect.
  */
 export class TraciveConfigurationError extends Error {
   override readonly name = 'TraciveConfigurationError' as const;

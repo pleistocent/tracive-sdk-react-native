@@ -89,6 +89,27 @@ const SPENT_REFRESH_TOKEN_HISTORY = 8;
  * that turns out to be wrong — that failure is the partner's own and is visible to them, which is
  * the whole reason not to paper over it.
  */
+/**
+ * Refuses a blank `partnerUserId` where the mistake was made.
+ *
+ * TypeScript makes the field required, which is enough for a TypeScript caller and nothing at all
+ * for a JavaScript one, or for a value that arrived from a form, a config file or an API. Left
+ * unchecked it went out as `partner_user_id=`, and the Tracive app rejects that client-side with no
+ * redirect — so the partner app receives nothing to handle and no log anywhere records the attempt.
+ * Kotlin, Swift and Flutter all reject at construction; this is the same gate.
+ */
+function requirePartnerUserId(configuration: OAuthConfiguration): void {
+  if (configuration.partnerUserId.trim() === '') {
+    throw new TraciveConfigurationError(
+      'blank_partner_user_id',
+      'partnerUserId is blank. The authorization request has to carry one: the Tracive app ' +
+        'refuses a consent without it, client-side and with no redirect, so the failure would ' +
+        'reach you as silence rather than as an error. It is also what the grant is keyed on — ' +
+        'echoed back in grant.revoked so you can map the event to your own customer.',
+    );
+  }
+}
+
 function resolveInstallUrl(configured: string | undefined): string {
   if (configured === undefined) return DEFAULT_INSTALL_URL;
   if (configured.trim() === '') {
@@ -240,6 +261,7 @@ export class TraciveOAuth {
   #credentialEpoch = 0;
 
   constructor(options: TraciveOAuthOptions) {
+    requirePartnerUserId(options.mode);
     this.#config = options.mode;
     this.#environment = options.environment ?? TraciveEnvironment.production;
     this.#transport = options.transport ?? new FetchHttpTransport();
