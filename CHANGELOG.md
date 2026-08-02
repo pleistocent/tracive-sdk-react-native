@@ -9,6 +9,38 @@ All notable changes to this project are documented here. The format follows
 Audit follow-up. Nothing here is a published change yet — 0.1.0 has not shipped — so this section
 records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
+### Breaking
+
+- **`partnerUserId` is now required, and a blank one is refused.** A blank one now raises a
+  `blank_partner_user_id` configuration error: the type made the field required, which is worth
+  nothing to a JavaScript caller or to a value that arrived from a form. It was optional in all four
+  SDKs, and the documentation here told you to omit it when your integration has no user accounts.
+  Following that reached a consent screen that refuses **client-side, before any network call, and
+  returns no redirect at all** — so your app is handed nothing to handle, the user sees a generic
+  "invalid request", and no server-side log records that it happened. The field is what the grant is
+  keyed on: stored as you sent it, echoed back in `grant.revoked` and `grant.superseded` so you can
+  map the event to your own customer, and what enforces one of your accounts to one Tracive account.
+  Send an opaque identifier — never a raw phone number or email.
+
+### Fixed
+
+- **The authorize URL pointed at a host no Tracive build claims.** This SDK built
+  `tracive://authorize`, a custom-scheme URL nothing registers. The Tracive app claims
+  `https://tracive.id/oauth/authorize`, and `sandbox.tracive.id` for its sandbox build, as an App
+  Link and a Universal Link — nothing else opens the app, so consent could not start at all. Both
+  wrong spellings were pinned by their own repository's tests, so no single-repo check could have
+  caught it.
+
+- **The app-presence probe reported "not installed" on every Android device, including the ones
+  holding the app.** It probed a custom-scheme URL carrying a host the app does not register, and
+  Android resolves such a probe by intent-filter matching: a filter that declares a host requires
+  the URI to carry a matching one. It now probes the bare scheme, which the Tracive app claims with
+  a scheme-only intent-filter added for the purpose. Verified on a device — `tracivedev://` went
+  from "unable to resolve Intent" to starting the app.
+
+- **The presence probe now follows the environment.** It was hardcoded to production, so testing
+  against sandbox on a device carrying only the sandbox build reported the app as absent.
+
 ### Added
 
 - **`cancelPendingAuthorization(authorizationId?)` and `pendingAuthorizationId`.** No redirect
