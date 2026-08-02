@@ -12,7 +12,11 @@
  * fails loudly.
  */
 
-import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME } from '../oauth/authorizeUrl';
+import {
+  TRACIVE_ANDROID_PACKAGE,
+  TRACIVE_APP_SCHEME,
+  TRACIVE_APP_SCHEMES,
+} from '../oauth/authorizeUrl';
 
 /**
  * Re-exported, not redefined. These used to be a second copy of the two values the OAuth flow
@@ -20,7 +24,7 @@ import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME } from '../oauth/authorizeU
  * whether their manifest agrees with the SDK, and a doctor working from its own copy of the answer
  * can certify a manifest the SDK will then refuse. See `authorizeUrl.ts`.
  */
-export { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME };
+export { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME, TRACIVE_APP_SCHEMES };
 
 export type FindingSeverity = 'error' | 'warning';
 
@@ -64,7 +68,7 @@ const QUERIES_BLOCK = `<queries>
     <package android:name="${TRACIVE_ANDROID_PACKAGE}" />
     <intent>
         <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="${TRACIVE_APP_SCHEME}" />
+${TRACIVE_APP_SCHEMES.map((s) => `        <data android:scheme="${s}" />`).join('\n')}
     </intent>
     <intent>
         <action android:name="android.intent.action.VIEW" />
@@ -105,7 +109,12 @@ export function checkAndroidManifest(xml: string, redirect: RedirectTarget | und
         fix: `Add inside <queries>:\n    <package android:name="${TRACIVE_ANDROID_PACKAGE}" />`,
       });
     }
-    if (!new RegExp(`android:scheme="${TRACIVE_APP_SCHEME}"`).test(queries)) {
+    // Every scheme, not just production: the presence probe follows the environment, so a host
+    // that declares only `tracive` reports "not installed" for a sandbox build that is installed.
+    const missingSchemes = TRACIVE_APP_SCHEMES.filter(
+      (scheme) => !new RegExp(`android:scheme="${scheme}"`).test(queries),
+    );
+    if (missingSchemes.length > 0) {
       findings.push({
         severity: 'error',
         code: 'missing_query_declaration',
@@ -115,7 +124,8 @@ export function checkAndroidManifest(xml: string, redirect: RedirectTarget | und
         fix:
           '    <intent>\n' +
           '        <action android:name="android.intent.action.VIEW" />\n' +
-          `        <data android:scheme="${TRACIVE_APP_SCHEME}" />\n` +
+          missingSchemes.map((s) => `        <data android:scheme="${s}" />`).join('\n') +
+          `\n` +
           '    </intent>',
       });
     }
@@ -185,17 +195,21 @@ export function checkInfoPlist(plist: string): Finding[] {
           'false on iOS and every user is routed to the install page.',
         fix:
           '<key>LSApplicationQueriesSchemes</key>\n<array>\n' +
-          `    <string>${TRACIVE_APP_SCHEME}</string>\n</array>`,
+          TRACIVE_APP_SCHEMES.map((s) => `    <string>${s}</string>`).join('\n') +
+          `\n</array>`,
       },
     ];
   }
-  if (!new RegExp(`<string>${TRACIVE_APP_SCHEME}</string>`).test(arrayMatch[1] ?? '')) {
+  const missingIosSchemes = TRACIVE_APP_SCHEMES.filter(
+    (scheme) => !new RegExp(`<string>${scheme}</string>`).test(arrayMatch[1] ?? ''),
+  );
+  if (missingIosSchemes.length > 0) {
     return [
       {
         severity: 'error',
         code: 'missing_ios_query_scheme',
         message: 'LSApplicationQueriesSchemes does not list `tracive`.',
-        fix: `    <string>${TRACIVE_APP_SCHEME}</string>`,
+        fix: missingIosSchemes.map((s) => `    <string>${s}</string>`).join('\n'),
       },
     ];
   }
