@@ -1,0 +1,108 @@
+import { countryFromAlpha3 } from './countries';
+import { TraciveQueryError } from './TraciveQueryError';
+
+/**
+ * Turns a phone number written the way people in a country actually write it into E.164.
+ *
+ * `TraciveQuery.phone` deliberately refuses a local format such as `081234567891`, and says why: the
+ * SDK cannot know the caller's dial code, and a wrong guess still costs a credit. This function is
+ * where that missing dial code comes from, so the strictness downstream stays intact:
+ *
+ * ```ts
+ * TraciveQuery.phone(normalizePhoneNumber('IDN', '0857-1860-9079')); // +6285718609079
+ * TraciveQuery.phone(normalizePhoneNumber('+62', '0857 1860 9079')); // the same key
+ * ```
+ *
+ * It is a plain exported function on purpose: a partner needs the E.164 form for their own records,
+ * logging and outbound messaging, not only for a Tracive lookup.
+ *
+ * The rules are a deliberate copy of the Tracive app's normalizer, heuristics included — if the app
+ * folded a number one way and this SDK another, one person would become two record keys, and a
+ * report filed in the app would be invisible to a check made here.
+ * `phone-normalization-vectors.json` pins the agreement and is vendored byte-identically into all
+ * four SDK repositories.
+ *
+ * @param countryOrDialCode an ISO 3166-1 **alpha-3** code (`IDN`, `USA` — case-insensitive) or a
+ *   dial code with or without `+` (`+62`, `62`). Told apart by shape: letters mean alpha-3, digits
+ *   mean a dial code. Alpha-2 (`ID`) is refused, because this SDK speaks alpha-3 everywhere.
+ * @param phoneNumber the number as written locally. Spaces, dashes, brackets and a leading `+` are
+ *   all fine.
+ * @returns the number in E.164. Never an empty string.
+ * @throws TraciveQueryError `empty_country`, `unknown_country`, `empty_phone_number` or
+ *   `country_conflict`.
+ */
+export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: string): string {
+  const dialCode = resolveDialCode(countryOrDialCode);
+  let digits = digitsOf(phoneNumber);
+  if (digits === '') throw new TraciveQueryError('empty_phone_number');
+
+  // A leading `+` is the caller stating "this is already international". If the code that follows
+  // disagrees with the country they named, the two arguments contradict each other, and guessing
+  // which one is right is exactly what costs a credit: ('IDN', '+64857…') used to yield
+  // +626485718609079, a New Zealand number wearing an Indonesian dial code.
+  //
+  // This is the one place this function departs from the Tracive app's normalizer. Departing is
+  // safe here precisely because every input it now rejects produced an unusable key in the app too.
+  if (phoneNumber.includes('+') && !digits.startsWith(dialCode)) {
+    throw new TraciveQueryError('country_conflict');
+  }
+
+  if (digits.startsWith(`00${dialCode}`)) {
+    digits = digits.slice(2 + dialCode.length);
+  } else if (digits.startsWith(dialCode)) {
+    digits = digits.slice(dialCode.length);
+  }
+
+  switch (dialCode) {
+    // Russia and Kazakhstan: trunk prefix 8, local numbers are 10 digits.
+    case '7':
+      if (digits.startsWith('8') && digits.length === 11) digits = digits.slice(1);
+      break;
+    // Italy and San Marino: the leading 0 IS part of the number for landlines.
+    case '39':
+    case '378':
+      break;
+    // North America: trunk prefix 1, local numbers are 10 digits.
+    case '1':
+      if (digits.startsWith('1') && digits.length === 11) digits = digits.slice(1);
+      break;
+    // Everywhere else, including Indonesia, the UK and Germany: trunk prefix 0.
+    default:
+      digits = withoutLeadingZeros(digits);
+      break;
+  }
+
+  if (digits === '') throw new TraciveQueryError('empty_phone_number');
+  return `+${dialCode}${digits}`;
+}
+
+function digitsOf(value: string): string {
+  let out = '';
+  for (const character of value) {
+    if (character >= '0' && character <= '9') out += character;
+  }
+  return out;
+}
+
+function withoutLeadingZeros(value: string): string {
+  let index = 0;
+  while (index < value.length && value[index] === '0') index += 1;
+  return value.slice(index);
+}
+
+/** Alpha-3 in, dial code out; or digits in, the same digits out. */
+function resolveDialCode(countryOrDialCode: string): string {
+  const trimmed = countryOrDialCode.trim();
+  if (trimmed === '') throw new TraciveQueryError('empty_country');
+
+  const digits = digitsOf(trimmed);
+  if (digits !== '') {
+    const stripped = withoutLeadingZeros(digits);
+    if (stripped === '') throw new TraciveQueryError('empty_country');
+    return stripped;
+  }
+
+  const country = countryFromAlpha3(trimmed);
+  if (country === undefined) throw new TraciveQueryError('unknown_country');
+  return country.dialCode;
+}

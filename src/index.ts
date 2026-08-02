@@ -15,6 +15,9 @@
 // Query
 // ---------------------------------------------------------------------------------------------
 export { TraciveQuery } from './query/TraciveQuery';
+export { normalizePhoneNumber } from './query/phoneNumbers';
+export { COUNTRIES, countryFromAlpha3 } from './query/countries';
+export type { CountryInfo, CountryAlpha3 } from './query/countries';
 export {
   TraciveQueryError,
   isTraciveQueryError,

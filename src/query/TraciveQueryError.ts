@@ -6,6 +6,10 @@
  */
 export type QueryRejectionReason =
   | 'not_e164'
+  | 'empty_country'
+  | 'unknown_country'
+  | 'empty_phone_number'
+  | 'country_conflict'
   | 'not_an_email'
   | 'country_not_alpha3'
   | 'empty_account_id'
