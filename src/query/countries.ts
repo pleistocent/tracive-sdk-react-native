@@ -19,7 +19,13 @@ export interface CountryInfo {
   readonly countryName: string;
 }
 
-export const COUNTRIES: readonly CountryInfo[] = [
+/**
+ * Deliberately **not** annotated `readonly CountryInfo[]`. That annotation widens every literal back
+ * to `string` and silently discards what `as const` is here for: `CountryAlpha3` became `string`, so
+ * `const typo: CountryAlpha3 = 'NOT_A_COUNTRY'` compiled. The type is the check; the annotation
+ * removed it.
+ */
+export const COUNTRIES = [
   { dialCode: '297', alpha2: 'AW', alpha3: 'ABW', countryName: 'Aruba' },
   { dialCode: '93', alpha2: 'AF', alpha3: 'AFG', countryName: 'Afghanistan' },
   { dialCode: '244', alpha2: 'AO', alpha3: 'AGO', countryName: 'Angola' },
@@ -290,8 +296,8 @@ export const COUNTRIES: readonly CountryInfo[] = [
 /** Every alpha-3 code this SDK knows, as a union — a typo is a compile error. */
 export type CountryAlpha3 = (typeof COUNTRIES)[number]['alpha3'];
 
-const BY_ALPHA3: ReadonlyMap<string, CountryInfo> = new Map(
-  COUNTRIES.map((country) => [country.alpha3, country]),
+const BY_ALPHA3: ReadonlyMap<string, CountryInfo> = new Map<string, CountryInfo>(
+  COUNTRIES.map((country) => [country.alpha3, country] as const),
 );
 
 /** The country with this ISO 3166-1 alpha-3 code, case-insensitively, or undefined. */

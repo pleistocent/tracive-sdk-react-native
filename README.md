@@ -330,7 +330,12 @@ reason `not_an_email`. The check is deliberately nothing more than that — a st
 would start refusing addresses the server would have matched, and a refused lookup is an answer you
 never get.
 
-**There is ### Local phone formats: `normalizePhoneNumber`
+**There is no `domain()` builder**, and this is deliberate rather than an omission. The Tracive API
+indexes exactly five identifier types, so a domain key would match nothing and the miss would still
+cost a credit. Domain checking is planned for a future release built on similarity search, which
+does not fit exact-match keys; adding it then is not a breaking change.
+
+### Local phone formats: `normalizePhoneNumber`
 
 `TraciveQuery.phone` takes E.164 and nothing else, so `081234567891` is refused rather than guessed
 at — the SDK cannot know your dial code, and a wrong guess still costs a credit.
@@ -370,11 +375,6 @@ be right, and guessing produces a key that can never match — billed as a miss.
 Everything else is a deliberate copy of the app's normalizer, pinned by
 `phone-normalization-vectors.json` — vendored byte-identically into all four SDK repositories, like
 the grammar fixture.
-
-no `domain()` builder**, and this is deliberate rather than an omission. The Tracive API
-indexes exactly five identifier types, so a domain key would match nothing and the miss would still
-cost a credit. Domain checking is planned for a future release built on similarity search, which
-does not fit exact-match keys; adding it then is not a breaking change.
 
 ### Where the result comes from
 
