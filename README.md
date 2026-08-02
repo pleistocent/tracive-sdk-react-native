@@ -213,7 +213,7 @@ flowchart LR
   Client --> Cache["CheckCache"]
   Client --> OAuth["TraciveOAuth"]
   Client --> Transport["HttpTransport"]
-  OAuth -.->|"tracive://authorize"| TApp["Tracive app on the device"]
+  OAuth -.->|"https://tracive.id/oauth/authorize"| TApp["Tracive app on the device"]
   Transport -->|"oauth mode"| Api["Tracive API"]
   Transport -->|"proxy mode"| Gateway["Your own backend"]
   Gateway --> Api

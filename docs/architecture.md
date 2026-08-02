@@ -60,7 +60,7 @@ flowchart TD
   OAuth --> Tokens
   OAuth --> Pending
   OAuth --> Transport
-  OAuth -.->|"opens tracive://authorize"| TraciveApp
+  OAuth -.->|"opens https://tracive.id/oauth/authorize"| TraciveApp
   TraciveApp -.->|"redirects with code and state"| Redirect
   Redirect -->|"startLinkListener"| OAuth
   Transport -->|"oauth mode"| Api
@@ -98,7 +98,7 @@ sequenceDiagram
     participant Api as Tracive API
 
     App->>SDK: authorize()
-    SDK->>OS: AppPresenceProbe, canOpenURL tracive://authorize
+    SDK->>OS: AppPresenceProbe, canOpenURL tracive:// (bare scheme)
     alt Tracive app absent, or presence unknown
         SDK->>OS: openExternally(installUrlForDisplay())
         SDK-->>App: appNotInstalled
@@ -106,7 +106,7 @@ sequenceDiagram
         SDK->>SDK: createPkcePair() and createState()
         SDK->>Store: write state, codeVerifier, redirectUri, createdAtMs
         Note over SDK,Store: Written BEFORE the launch. It outlives process death only if the store is persistent, and the default store is not
-        SDK->>OS: openExternally, tracive://authorize with code_challenge_method=S256
+        SDK->>OS: openExternally, https://tracive.id/oauth/authorize with code_challenge_method=S256
         SDK-->>App: null, the outcome arrives later
         OS->>Tracive: hand off to the Tracive app
         Tracive->>Tracive: the user grants or denies consent

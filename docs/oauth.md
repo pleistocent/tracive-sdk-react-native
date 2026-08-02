@@ -6,7 +6,7 @@ on the user's device**. There is no API key, no password prompt and no web conse
 ## The flow
 
 ```
-your app  --(1) tracive://authorize?...-->  Tracive app
+your app  --(1) https://tracive.id/oauth/authorize?...-->  Tracive app
                                                |
 your app  <--(2) https://your.app/oauth/callback?code=...&state=...
    |

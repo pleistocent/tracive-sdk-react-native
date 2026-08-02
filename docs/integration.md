@@ -54,6 +54,10 @@ As a **direct child of `<manifest>`** in `android/app/src/main/AndroidManifest.x
     </intent>
     <intent>
         <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="tracivedev" />
+    </intent>
+    <intent>
+        <action android:name="android.intent.action.VIEW" />
         <data android:scheme="https" />
     </intent>
 </queries>
@@ -89,8 +93,14 @@ In `ios/<App>/Info.plist`:
 <key>LSApplicationQueriesSchemes</key>
 <array>
     <string>tracive</string>
+    <string>tracivedev</string>
 </array>
 ```
+
+Both schemes, not just the first. The presence probe follows the environment: against
+`TraciveEnvironment.sandbox` it probes `tracivedev://`, and a host that declares only `tracive`
+reports "not installed" for a sandbox build that is installed — sending a tester to an install page
+for an app they are holding. `npx tracive-doctor` checks for both.
 
 Enable the **Associated Domains** capability with `applinks:your.app`, and serve
 `https://your.app/.well-known/apple-app-site-association` naming your team and bundle identifier.
