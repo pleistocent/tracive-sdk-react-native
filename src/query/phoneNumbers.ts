@@ -47,7 +47,7 @@ export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: str
   // folds it correctly, so here the SDK is genuinely stricter. That is the intended trade: `+` and
   // `00` are alternative spellings, not stackable ones; what follows `+` must be a country code,
   // and `00` is none. An earlier version of this comment claimed the first reason covered both.
-  if (phoneNumber.includes('+') && !digits.startsWith(dialCode)) {
+  if (phoneNumber.trimStart().startsWith('+') && !digits.startsWith(dialCode)) {
     throw new TraciveQueryError('country_conflict');
   }
 
