@@ -51,7 +51,7 @@ export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: str
   // A third, quieter one: emptiness is re-checked *after* the trunk prefix is stripped, so `000`,
   // `62` and `1` are refused. The app folds those to `+62` and `+1`, which cannot match any record,
   // so this belongs with the first kind — safe, not stricter.
-  if (phoneNumber.trimStart().startsWith('+') && !digits.startsWith(dialCode)) {
+  if (trimStartCanonically(phoneNumber).startsWith('+') && !digits.startsWith(dialCode)) {
     throw new TraciveQueryError('country_conflict');
   }
 
@@ -100,7 +100,7 @@ function withoutLeadingZeros(value: string): string {
 
 /** Alpha-3 in, dial code out; or digits in, the same digits out. */
 function resolveDialCode(countryOrDialCode: string): string {
-  const trimmed = countryOrDialCode.trim();
+  const trimmed = trimCanonically(countryOrDialCode);
   if (trimmed === '') throw new TraciveQueryError('empty_country');
 
   const digits = digitsOf(trimmed);
@@ -113,4 +113,32 @@ function resolveDialCode(countryOrDialCode: string): string {
   const country = countryFromAlpha3(trimmed);
   if (country === undefined) throw new TraciveQueryError('unknown_country');
   return country.dialCode;
+}
+
+/**
+ * The characters trimmed from a country or dial code, defined here rather than delegated to
+ * `String.prototype.trim()`.
+ *
+ *
+ * ASCII whitespace only, and deliberately **not** U+FEFF. A byte-order mark inside a data value is
+ * an encoding fault upstream; swallowing it here would tell a partner their pipeline is clean while
+ * the same mark waits to land in a phone number or an account id, where nothing trims it and the key
+ * comes out wrong. Each platform's own trim() disagrees about this — Kotlin's follows Unicode
+ * White_Space plus U+FEFF, JavaScript's strips a different set — which made one input behave two
+ * ways across the four SDKs.
+ */
+const TRIMMED = new Set([' ', '\t', '\n', '\u000B', '\u000C', '\r']);
+
+function trimCanonically(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && TRIMMED.has(value[start] as string)) start += 1;
+  while (end > start && TRIMMED.has(value[end - 1] as string)) end -= 1;
+  return value.slice(start, end);
+}
+
+function trimStartCanonically(value: string): string {
+  let start = 0;
+  while (start < value.length && TRIMMED.has(value[start] as string)) start += 1;
+  return value.slice(start);
 }

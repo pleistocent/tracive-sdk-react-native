@@ -302,5 +302,5 @@ const BY_ALPHA3: ReadonlyMap<string, CountryInfo> = new Map<string, CountryInfo>
 
 /** The country with this ISO 3166-1 alpha-3 code, case-insensitively, or undefined. */
 export function countryFromAlpha3(alpha3: string): CountryInfo | undefined {
-  return BY_ALPHA3.get(alpha3.trim().toUpperCase());
+  return BY_ALPHA3.get(alpha3.replace(/^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g, '').toUpperCase());
 }
