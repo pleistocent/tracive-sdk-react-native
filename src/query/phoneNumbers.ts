@@ -80,7 +80,13 @@ export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: str
       break;
   }
 
-  if (digits === '') throw new TraciveQueryError('empty_phone_number');
+  // A number that is nothing but zeros is refused here, not left to `phone()`. For most countries the
+  // trunk-prefix rule strips the zeros away and the emptiness check above catches it — but Italy, San
+  // Marino, North America and Russia do not strip leading zeros, so `+390000000` survived, matched
+  // E.164, reached the network and was billed for a miss it could only ever be. Refusing it here also
+  // makes the reason the same in every country instead of `empty_phone_number` in Indonesia and
+  // `not_e164` in Italy for the identical input.
+  if (digits === '' || /^0+$/.test(digits)) throw new TraciveQueryError('empty_phone_number');
   return `+${dialCode}${digits}`;
 }
 
