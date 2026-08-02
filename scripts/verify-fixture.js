@@ -24,8 +24,8 @@ const FIXTURES = [
   },
   {
     path: 'src/query/__tests__/phone-normalization-vectors.json',
-    sha256: '4f8c38d3e60dddb0dc9fdaf1cb4d25909b7f487d8ccfafac99ea583c47e4187c',
-    bytes: 41403,
+    sha256: '4a1a52ad5d92a22ac70eb27dc546342f12507c30705fb9fd3a0d9adb2e6d0e0d',
+    bytes: 42023,
     name: 'phone-normalization',
   },
 ];
