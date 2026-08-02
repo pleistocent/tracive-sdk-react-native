@@ -187,6 +187,12 @@ third does not spend its budget re-deriving them. Anything that differs across t
 
 ## Tests
 
+When you add a test, check that it can fail. Change the value it asserts, or delete the guard it
+covers, and watch it go red before you commit it. This repository has produced the failure twice
+over: `oauth.flow.test.ts` asserted `tracive://authorize` under a test named "matches the sibling
+SDKs" when no sibling used it, and the doctor's sandbox-scheme check shipped with nothing asserting
+it — restricting the check back to production alone left all 25 doctor tests green.
+
 No unit test opens a socket, touches a device or launches a browser. Every capability that reaches
 the outside world is a port; inject a fake. `src/__tests__/support/` has the ones already written.
 
