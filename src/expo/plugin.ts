@@ -7,11 +7,11 @@ import {
   type ConfigPlugin,
 } from '@expo/config-plugins';
 
-import { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
+import { TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
 
-// Re-exported so the plugin's own tests can name it; the definition lives with the flow that
+// Re-exported so the plugin's own tests can name them; the definitions live with the flow that
 // probes for the app at runtime. See `authorizeUrl.ts`.
-export { TRACIVE_ANDROID_PACKAGE };
+export { TRACIVE_APP_SCHEMES };
 
 const VIEW_ACTION = 'android.intent.action.VIEW';
 
@@ -48,14 +48,6 @@ export function mergeTraciveQueries(manifest: { queries?: unknown[] }): void {
   const queries = (manifest.queries ?? []) as QueriesElement[];
   const target: QueriesElement = queries[0] ?? {};
   if (queries.length === 0) queries.push(target);
-
-  // The <package> entry backs the presence probe by package id.
-  const packages = target.package ?? [];
-  const declared = packages.some(
-    (entry) => entry.$?.['android:name'] === TRACIVE_ANDROID_PACKAGE,
-  );
-  if (!declared) packages.push({ $: { 'android:name': TRACIVE_ANDROID_PACKAGE } });
-  target.package = packages;
 
   // The scheme <intent> entries keep canOpenURL from rejecting outright on API 30+.
   const intents = target.intent ?? [];

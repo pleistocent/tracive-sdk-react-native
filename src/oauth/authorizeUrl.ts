@@ -82,15 +82,13 @@ export const TRACIVE_APP_SCHEME = 'tracive';
  * URL scheme the sandbox Tracive build registers.
  *
  * Sandbox and production are separate worlds by design: neither claims the other's scheme, so a
- * probe for one cannot see the other. The scheme is what this SDK probes for; the sandbox build's
- * application id is not something it needs, and naming one here would disclose that it exists.
+ * probe for one cannot see the other. A host manifest and `Info.plist` must therefore declare BOTH
+ * schemes, or switching to sandbox silently answers "not installed" for every device.
  */
 export const TRACIVE_SANDBOX_APP_SCHEME = 'tracivedev';
 
 /** Every scheme a host manifest must declare for the probe to answer. */
 export const TRACIVE_APP_SCHEMES = [TRACIVE_APP_SCHEME, TRACIVE_SANDBOX_APP_SCHEME] as const;
-
-export const TRACIVE_ANDROID_PACKAGE = 'com.pleistocent.tracive';
 
 /**
  * The URL probed to decide whether the Tracive app is installed.

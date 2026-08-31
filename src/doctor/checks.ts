@@ -13,7 +13,6 @@
  */
 
 import {
-  TRACIVE_ANDROID_PACKAGE,
   TRACIVE_APP_SCHEME,
   TRACIVE_APP_SCHEMES,
 } from '../oauth/authorizeUrl';
@@ -24,7 +23,7 @@ import {
  * whether their manifest agrees with the SDK, and a doctor working from its own copy of the answer
  * can certify a manifest the SDK will then refuse. See `authorizeUrl.ts`.
  */
-export { TRACIVE_ANDROID_PACKAGE, TRACIVE_APP_SCHEME, TRACIVE_APP_SCHEMES };
+export { TRACIVE_APP_SCHEME, TRACIVE_APP_SCHEMES };
 
 export type FindingSeverity = 'error' | 'warning';
 
@@ -65,7 +64,6 @@ export function parseRedirectUri(redirectUri: string): RedirectTarget | undefine
 }
 
 const QUERIES_BLOCK = `<queries>
-    <package android:name="${TRACIVE_ANDROID_PACKAGE}" />
     <intent>
         <action android:name="android.intent.action.VIEW" />
 ${TRACIVE_APP_SCHEMES.map((s) => `        <data android:scheme="${s}" />`).join('\n')}
@@ -101,14 +99,11 @@ export function checkAndroidManifest(xml: string, redirect: RedirectTarget | und
       fix: `Add as a direct child of <manifest>:\n${QUERIES_BLOCK}`,
     });
   } else {
-    if (!queries.includes(TRACIVE_ANDROID_PACKAGE)) {
-      findings.push({
-        severity: 'error',
-        code: 'missing_query_declaration',
-        message: `The <queries> block does not name the package ${TRACIVE_ANDROID_PACKAGE}.`,
-        fix: `Add inside <queries>:\n    <package android:name="${TRACIVE_ANDROID_PACKAGE}" />`,
-      });
-    }
+    // No <package> check. The probe resolves an intent, which the scheme query below answers, so
+    // a <package> entry is redundant — measured on an API 36 device: a scheme-only <intent> query
+    // makes the target visible with no <package> entry present. This used to be an error, which
+    // meant the doctor rejected a correct manifest and told the reader "both are needed".
+    //
     // Every scheme, not just production: the presence probe follows the environment, so a host
     // that declares only `tracive` reports "not installed" for a sandbox build that is installed.
     const missingSchemes = TRACIVE_APP_SCHEMES.filter(
@@ -119,8 +114,9 @@ export function checkAndroidManifest(xml: string, redirect: RedirectTarget | und
         severity: 'error',
         code: 'missing_query_declaration',
         message:
-          'The <queries> block does not declare the `tracive` scheme <intent>. Both the ' +
-          '<package> entry and the scheme <intent> are needed.',
+          'The <queries> block does not declare a scheme <intent> for: ' +
+          `${missingSchemes.join(', ')}. The probe follows the environment, so every scheme it ` +
+          'may use needs one.',
         fix:
           '    <intent>\n' +
           '        <action android:name="android.intent.action.VIEW" />\n' +

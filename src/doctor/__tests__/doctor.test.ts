@@ -18,7 +18,6 @@ const REDIRECT = parseRedirectUri('https://your.app/oauth/callback');
 const GOOD_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <queries>
-    <package android:name="com.pleistocent.tracive" />
     <intent>
       <action android:name="android.intent.action.VIEW" />
       <data android:scheme="tracive" />
@@ -88,12 +87,23 @@ describe('the Android manifest check', () => {
     );
     expect(findings.some((f) => f.code === 'missing_query_declaration')).toBe(true);
     expect(exitCodeFor(findings)).toBe(1);
-    // The finding carries the exact block to paste.
-    expect(findings[0]?.fix).toContain('com.pleistocent.tracive');
+    // The finding carries the exact block to paste, schemes and all.
+    expect(findings[0]?.fix).toContain('android:scheme="tracive"');
+    expect(findings[0]?.fix).toContain('android:scheme="tracivedev"');
+    // Never a <package> entry: it would name one build, so it cannot follow the environment the
+    // way the probe does, and it would land in the host's shipped manifest.
+    expect(findings[0]?.fix).not.toContain('<package');
   });
 
-  it('fails when <queries> names the package but not the scheme', () => {
-    // Both forms are needed; one alone still breaks canOpenURL on API 30+.
+  it('passes a manifest with scheme <intent> entries and no <package> entry', () => {
+    // The doctor used to require both and say so — "Both the <package> entry and the scheme
+    // <intent> are needed" — which rejected a correct manifest with exit 1. A scheme-only query
+    // is sufficient; measured on an API 36 device, where it alone made the target visible.
+    expect(GOOD_MANIFEST).not.toContain('<package');
+    expect(checkAndroidManifest(GOOD_MANIFEST, REDIRECT)).toEqual([]);
+  });
+
+  it('fails when a scheme <intent> is missing', () => {
     const manifest = GOOD_MANIFEST.replace(/<data android:scheme="tracive" \/>/, '');
     const findings = checkAndroidManifest(manifest, REDIRECT);
     expect(findings.some((f) => f.code === 'missing_query_declaration')).toBe(true);

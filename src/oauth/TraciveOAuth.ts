@@ -27,7 +27,6 @@ import {
   DEFAULT_INSTALL_URL,
   parseCallbackParameters,
   redirectTarget,
-  TRACIVE_ANDROID_PACKAGE,
   TRACIVE_APP_SCHEME,
 } from './authorizeUrl';
 import { linkingLinkSource, startLinkListener, type LinkSource } from './linkListener';
@@ -179,7 +178,6 @@ function parseJsonBody(body: string): Record<string, unknown> {
 
 export class TraciveOAuth {
   static readonly traciveAppScheme = TRACIVE_APP_SCHEME;
-  static readonly traciveAndroidPackage = TRACIVE_ANDROID_PACKAGE;
   /**
    * The presence probe for an environment. A function rather than a constant since 2 August 2026:
    * the sandbox build registers its own scheme, and probing production's cannot see it.

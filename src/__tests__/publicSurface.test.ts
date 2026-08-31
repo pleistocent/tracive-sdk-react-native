@@ -10,10 +10,9 @@ import { TraciveQuery } from '../query/TraciveQuery';
 import { NoOpCheckCache } from '../cache/CheckCache';
 import { RetryPolicy } from '../client/RetryPolicy';
 import { TraciveClient } from '../client/TraciveClient';
-import { TRACIVE_ANDROID_PACKAGE } from '../oauth/authorizeUrl';
-import { TraciveOAuth } from '../oauth/TraciveOAuth';
-import { TRACIVE_ANDROID_PACKAGE as doctorAndroidPackage } from '../doctor/checks';
-import { TRACIVE_ANDROID_PACKAGE as pluginAndroidPackage } from '../expo/plugin';
+import { TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
+import { TRACIVE_APP_SCHEMES as doctorSchemes } from '../doctor/checks';
+import { TRACIVE_APP_SCHEMES as pluginSchemes } from '../expo/plugin';
 
 function sourceFiles(directory: string, found: string[] = []): string[] {
   for (const entry of readdirSync(directory)) {
@@ -119,28 +118,31 @@ describe('there is no API key anywhere', () => {
  * refuse, or the plugin writes one the doctor calls wrong, with nothing pointing at the
  * discrepancy.
  */
-describe('the Tracive app’s Android identity', () => {
-  it('is written as a literal in exactly one source file', () => {
-    // Built from the constant rather than typed out as an escaped pattern. An escaped copy is a
-    // second definition of the very thing this test exists to keep single, and it also reads
-    // differently from the allowed form the hygiene scan looks for.
-    const literal = `'${TRACIVE_ANDROID_PACKAGE}'`;
-    const definitions: string[] = [];
-    for (const path of sourceFiles(join(process.cwd(), 'src'))) {
-      const source = readFileSync(path, 'utf8');
-      for (const [index, line] of source.split('\n').entries()) {
-        if (line.includes(literal)) definitions.push(`${path}:${index + 1}`);
+describe('the Tracive app’s URL schemes', () => {
+  it('are each written as a literal in exactly one source file', () => {
+    // Built from the constants rather than typed out, so this test cannot become a second
+    // definition of the very thing it exists to keep single.
+    for (const scheme of TRACIVE_APP_SCHEMES) {
+      const literal = `'${scheme}'`;
+      const definitions: string[] = [];
+      for (const path of sourceFiles(join(process.cwd(), 'src'))) {
+        const source = readFileSync(path, 'utf8');
+        for (const [index, line] of source.split('\n').entries()) {
+          if (line.includes(literal)) definitions.push(`${path}:${index + 1}`);
+        }
       }
+      expect(definitions).toHaveLength(1);
+      expect(definitions[0]).toContain(join('oauth', 'authorizeUrl.ts'));
     }
-    expect(definitions).toHaveLength(1);
-    expect(definitions[0]).toContain(join('oauth', 'authorizeUrl.ts'));
   });
 
-  it('is the same object everywhere it is used', () => {
-    expect(TRACIVE_ANDROID_PACKAGE).toBe('com.pleistocent.tracive');
-    expect(TraciveOAuth.traciveAndroidPackage).toBe(TRACIVE_ANDROID_PACKAGE);
-    expect(doctorAndroidPackage).toBe(TRACIVE_ANDROID_PACKAGE);
-    expect(pluginAndroidPackage).toBe(TRACIVE_ANDROID_PACKAGE);
+  it('are the same list everywhere they are used', () => {
+    // The doctor certifies a manifest against these, the Expo plugin writes one from them, and
+    // the flow probes them at runtime. A value edited in one place and not the others makes the
+    // doctor certify a manifest the SDK will not accept, and nothing about that points at why.
+    expect([...TRACIVE_APP_SCHEMES]).toEqual(['tracive', 'tracivedev']);
+    expect([...doctorSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
+    expect([...pluginSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
   });
 });
 

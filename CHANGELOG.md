@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`npx tracive-doctor` rejected a correct manifest.** It required a `<package android:name=...>`
+  entry alongside the scheme `<intent>` queries and said so — *"Both the `<package>` entry and the
+  scheme `<intent>` are needed"* — which is not true. The probe resolves an intent, which the scheme
+  query answers; measured on an API 36 device, a scheme-only query makes the target visible with no
+  `<package>` entry present. A project configured the right way exited 1 and was told to add a line
+  that does nothing.
+
+  A `<package>` entry also names a single build, so it cannot follow `environment` the way the probe
+  does, and it puts a Tracive application id into your shipped manifest for no gain. The Expo config
+  plugin no longer writes one either, and the by-hand block in `docs/integration.md` no longer shows
+  one. Existing manifests that still carry one are unaffected: it is now ignored rather than
+  required.
+
+### Breaking
+
+- **`TRACIVE_ANDROID_PACKAGE` and `TraciveOAuth.traciveAndroidPackage` are removed.** They existed
+  only to write and certify the `<package>` entry the fix above deletes. Keeping a constant that
+  names the manifest line you are now told not to add is worse than removing it. The drift guard
+  that pinned this value across the flow, the doctor and the plugin now pins `TRACIVE_APP_SCHEMES`
+  instead, which is the value those three actually have to agree on.
+
+
 Audit follow-up. Nothing here is a published change yet — 0.1.0 has not shipped — so this section
 records what a reader of the 0.1.0 notes above would otherwise be misled by.
 

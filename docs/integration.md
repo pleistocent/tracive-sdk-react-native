@@ -47,7 +47,6 @@ As a **direct child of `<manifest>`** in `android/app/src/main/AndroidManifest.x
 
 ```xml
 <queries>
-    <package android:name="com.pleistocent.tracive" />
     <intent>
         <action android:name="android.intent.action.VIEW" />
         <data android:scheme="tracive" />
@@ -63,10 +62,17 @@ As a **direct child of `<manifest>`** in `android/app/src/main/AndroidManifest.x
 </queries>
 ```
 
-Both forms are needed. Without them, on API 30 and above `Linking.canOpenURL` **rejects its promise**
-rather than returning `false`; the SDK catches that, reports "not installed" (failing closed), and
-emits an `app_presence_probe_failed` diagnostic naming this block — but every user who does have the
-Tracive app still gets sent to an install page.
+One `<intent>` per scheme the probe may use — the probe follows `environment`, so declaring only
+`tracive` breaks sandbox and nothing else, which is the harder half to notice.
+
+**No `<package>` entry**, and one would not help: the probe resolves an intent, which a scheme query
+answers, while a `<package>` entry names a single build and so cannot follow the environment. It
+would also put a Tracive application id into your shipped manifest for no gain.
+
+Without this block, on API 30 and above `Linking.canOpenURL` **rejects its promise** rather than
+returning `false`; the SDK catches that, reports "not installed" (failing closed), and emits an
+`app_presence_probe_failed` diagnostic naming this block — but every user who does have the Tracive
+app still gets sent to an install page.
 
 Inside your main `<activity>`, which must also carry `android:launchMode="singleTask"`:
 

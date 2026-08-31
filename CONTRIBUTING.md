@@ -23,10 +23,15 @@ strings or commit messages — may name any of the following:
 
 Say **"the Tracive API"** or **"the server"**. Say **"record key"**. Say **"phase 1" / "phase 2"**.
 
-The single allowed exception is the Android application id `com.pleistocent.tracive`, which the
-app-presence check genuinely needs, plus this repository's own GitHub path. No other application
-id belongs here — a non-production variant appears nowhere in shipping code, so naming one only
-discloses that it exists.
+Android application ids are exempt, production and sandbox alike, plus this repository's own GitHub
+path. Withholding an application id protects nothing: each authorize host publishes its own, and its
+signing-certificate fingerprints, at `/.well-known/assetlinks.json`, because that is what an App
+Link association is. This rule used to ban the sandbox id on the grounds that naming one "only
+discloses that it exists"; that reason was void from the day the sandbox App Link went live.
+
+As it happens this package names none of them any more. It probes a URL scheme, not a package, so
+the exemption is here for consistency with the other three SDKs rather than because anything needs
+it.
 
 `npm run hygiene` enforces this, and it enforces the same thing in CI as it does on your machine.
 
@@ -171,12 +176,15 @@ third does not spend its budget re-deriving them. Anything that differs across t
   the cache write inside the flight, so a collapsed check is stored once; Flutter and React Native
   latch the network call alone and let each caller write. The request count — the thing that is
   billed — is identical, and so is what a caller observes.
-- **Kotlin's app-presence probe does not follow the environment; the other three do.** Its Android
-  half checks package visibility, and the sandbox build's application id may not be named in a
-  published repository (see the hygiene rule below). Both of its platform checkers take the target
-  as a parameter with the sandbox case documented, so a host testing against sandbox supplies it and
-  declares the matching `<queries>` entry in its own manifest. Auto-selecting on iOS but not Android
-  would be worse than not auto-selecting at all.
+- **All four app-presence probes follow the environment, but Kotlin's asks a different question.**
+  This package, Flutter and Swift probe the app's URL scheme, which is all a package with no native
+  code can reach. Kotlin has real Android code, so it checks the exact application id through
+  `PackageManager` and takes its package visibility from a `<queries><intent>` on the authorize App
+  Link — a scheme any app may declare, an App Link only the build named in the host's assetlinks
+  can. Kotlin is therefore the strictest of the four, and this package cannot be brought up to it
+  without the native module it deliberately does not ship. This used to read "Kotlin's probe does
+  not follow the environment", which was true, and was caused by a hygiene rule that has since been
+  corrected.
 
 - **The pending-authorization window is configurable everywhere except Swift.** Kotlin, Flutter and
   React Native all take it as a parameter, so an integration spanning more than one can set the same

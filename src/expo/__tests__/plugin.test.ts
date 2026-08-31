@@ -4,9 +4,8 @@ import {
   applyTraciveLaunchMode,
   mergeTraciveQueries,
   parseRedirectUri,
-  TRACIVE_ANDROID_PACKAGE,
 } from '../plugin';
-import { TRACIVE_APP_SCHEME } from '../../oauth/authorizeUrl';
+import { TRACIVE_APP_SCHEMES } from '../../oauth/authorizeUrl';
 
 interface Named {
   $?: Record<string, string>;
@@ -58,13 +57,16 @@ describe('the Android <queries> merge', () => {
     expect(schemes(queries)).toContain('mailto');
   });
 
-  it('adds the Tracive package and both schemes', () => {
+  it('adds both schemes and adds no <package> entry', () => {
     const manifest: { queries?: unknown[] } = {};
     mergeTraciveQueries(manifest);
     const queries = manifest.queries as QueriesElement[];
 
-    expect(packageNames(queries)).toContain(TRACIVE_ANDROID_PACKAGE);
-    expect(schemes(queries)).toEqual(expect.arrayContaining([TRACIVE_APP_SCHEME, 'https']));
+    expect(schemes(queries)).toEqual(expect.arrayContaining([...TRACIVE_APP_SCHEMES, 'https']));
+    // A <package> entry would name one build, so it cannot follow the environment the way the
+    // probe does; the scheme queries are what answer it. Asserting the absence, because writing
+    // one into a host's shipped manifest is the thing this plugin must not do.
+    expect(packageNames(queries)).toEqual([]);
   });
 
   it('produces exactly one <queries> element', () => {
@@ -82,10 +84,9 @@ describe('the Android <queries> merge', () => {
     mergeTraciveQueries(manifest);
     const queries = manifest.queries as QueriesElement[];
 
-    expect(packageNames(queries).filter((name) => name === TRACIVE_ANDROID_PACKAGE)).toHaveLength(
-      1,
-    );
-    expect(schemes(queries).filter((scheme) => scheme === 'https')).toHaveLength(1);
+    for (const scheme of [...TRACIVE_APP_SCHEMES, 'https']) {
+      expect(schemes(queries).filter((declared) => declared === scheme)).toHaveLength(1);
+    }
   });
 
   it('does not re-add a scheme the host already made visible for VIEW', () => {

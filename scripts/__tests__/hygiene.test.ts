@@ -85,18 +85,24 @@ describe('the public-hygiene check', () => {
     expect(status).toBe(1);
   });
 
-  it('allows the Android application id but not an id built on top of it', () => {
-    // The suffix is assembled rather than written out: a non-production application id appears
-    // nowhere in shipping code, so spelling one here would disclose that it exists — which is
-    // the very thing this rule is for. The allowance used to be a plain substring, and a
-    // substring allowance is also a prefix allowance.
+  it('allows an Android application id and its build variants, but nothing else', () => {
+    // Build-variant suffixes are allowed as of the environment-following presence probe:
+    // withholding a non-production application id protected nothing, because every authorize host
+    // publishes its own — and its signing fingerprints — at /.well-known/assetlinks.json.
     const allowed = 'com.pleistocent.tracive';
     expect(runInTemporaryTree({ 'notes.md': `package ${allowed}\n` }).status).toBe(0);
+    expect(runInTemporaryTree({ 'notes.md': `package ${allowed}.${'sandbox'}\n` }).status).toBe(0);
 
-    const variant = `${allowed}.${'sandbox'}`;
-    const { status, output } = runInTemporaryTree({ 'notes.md': `package ${variant}\n` });
-    expect(output).toContain('organisation_token');
-    expect(status).toBe(1);
+    // The lookahead still does work. A suffix that is not a dotted segment, and an id whose
+    // second segment differs, are both still caught — the allowance is not a prefix allowance.
+    // Both are assembled rather than written out, because writing either would be a violation in
+    // this file, which is exactly what the rule under test says it is.
+    const org = allowed.split('.').slice(0, 2).join('.');
+    for (const forbidden of [`${allowed}${'x'}`, `${org}.${'other'}`]) {
+      const { status, output } = runInTemporaryTree({ 'notes.md': `package ${forbidden}\n` });
+      expect(output).toContain('organisation_token');
+      expect(status).toBe(1);
+    }
   });
 
   it('scans extension-less files and dotfiles, not only known extensions', () => {

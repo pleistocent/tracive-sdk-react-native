@@ -572,7 +572,6 @@ describe('signOut()', () => {
 describe('the SDK constants', () => {
   it('matches the sibling SDKs', () => {
     expect(TraciveOAuth.traciveAppScheme).toBe('tracive');
-    expect(TraciveOAuth.traciveAndroidPackage).toBe('com.pleistocent.tracive');
     expect(TraciveOAuth.defaultInstallUrl).toBe('https://tracive.chottu.link/install');
   });
 
