@@ -8,6 +8,12 @@ npm run verify
 `verify` runs, in order: hygiene, fixture pinning, typecheck, lint, tests, build, packaging checks
 and a runtime-dependency audit. All of it must pass before anything is pushed.
 
+> **CI is off.** The workflow is set to manual dispatch only, to stop metered Actions minutes on a
+> private repository — see the note at the top of `.github/workflows/ci.yml`, and re-enable it when
+> there is budget. Everything below still describes real gates; the only change is that **nothing
+> runs them for you**. Run `npm run verify` before you push, and read the rest of this file as instructions
+> for a human rather than a description of a robot.
+
 ---
 
 ## The public-hygiene rule

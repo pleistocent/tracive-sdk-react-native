@@ -1,9 +1,23 @@
 name: CI
 
+# ---------------------------------------------------------------------------------------------
+# CI IS OFF — re-enable when there is budget for it.
+#
+# This repository is private, so Actions minutes are metered. Nothing below has been deleted;
+# only the triggers changed. To turn automatic runs back on, restore:
+#
+#   on:
+#     pull_request:
+#     push:
+#       branches: [main]
+#
+# Until then the gates still exist as commands — they are the `run:` steps below, and every one of
+# them works on a laptop. Run them before pushing, because with this off nothing else will.
+# ---------------------------------------------------------------------------------------------
+
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Manual only, so a run costs something only when someone asks for it. See the note above.
+  workflow_dispatch:
 
 permissions:
   contents: read
