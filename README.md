@@ -143,7 +143,8 @@ import {
   expoSecureTokenStore,
 } from '@tracive/sdk-react-native/expo';
 
-// `config` is your OAuthConfiguration — clientId, redirectUri and scopes. See "Use it" below.
+// `config` is your OAuthConfiguration — clientId, redirectUri, partnerUserId and scopes. See
+// "Use it" below; every value you have to supply there is marked `TODO(partner)`.
 const client = new TraciveClient({
   mode: TraciveMode.oauth(config),
   cache,
@@ -240,8 +241,15 @@ import {
 
 const client = new TraciveClient({
   mode: TraciveMode.oauth({
+    // TODO(partner): the client id you were issued at registration.
     clientId: 'your-client-id',
+    // TODO(partner): an App Link / Universal Link on a host you own. `npx tracive-doctor` below
+    // checks that the host app actually declares it.
     redirectUri: 'https://your.app/oauth/callback',
+    // TODO(partner): your own stable, opaque id for this user — required and never blank, and
+    // never a raw phone number or email.
+    partnerUserId: 'your-user-id',
+    // TODO(partner): the narrowest set your integration needs.
     scopes: [TraciveScopes.scammerCheck],
   }),
   cache,

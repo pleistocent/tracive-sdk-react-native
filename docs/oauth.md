@@ -42,8 +42,10 @@ it is an integration that cannot authorize at all.
 import { TraciveScopes, TraciveMode } from '@tracive/sdk-react-native';
 
 TraciveMode.oauth({
+  // TODO(partner): your own values. `partnerUserId` is required and must not be blank.
   clientId: 'your-client-id',
   redirectUri: 'https://your.app/oauth/callback',
+  partnerUserId: 'your-user-id',
   scopes: [TraciveScopes.scammerCheck, TraciveScopes.creditsRead],
 });
 ```
@@ -153,8 +155,10 @@ import {
 // } from '@tracive/sdk-react-native/bare';
 
 const config = {
+  // TODO(partner): your own values. `partnerUserId` is required and must not be blank.
   clientId: 'your-client-id',
   redirectUri: 'https://your.app/oauth/callback',
+  partnerUserId: 'your-user-id',
   scopes: [TraciveScopes.scammerCheck],
 };
 
