@@ -455,6 +455,38 @@ describe('handleCallback()', () => {
     expect(transport.requests).toHaveLength(0);
   });
 
+  /**
+   * The one non-denial code the server actually sends, kept as its own case.
+   *
+   * The test above already covers the mechanism with a stand-in code. This pins the code the
+   * backend really emits, for the two situations that produce it: the partner organisation has not
+   * accepted the current terms, and the device has hit its daily connection limit to this partner.
+   * Neither is a refusal by this user, and a host that branches on `error.kind` rather than on the
+   * code cannot tell them from one — hence the assertion is on `serverCode`.
+   *
+   * The description matters as much as the code: it carries the server's own wording, including the
+   * reset time, which is what a partner app shows instead of "you declined".
+   */
+  it('surfaces temporarily_unavailable with its code and description', async () => {
+    const { oauth, transport, state } = await launched();
+    const description = 'daily connection limit for this device reached, retry after 00:00 UTC';
+    const result = await completed(
+      oauth.handleCallback(
+        `https://your.app/oauth/callback?error=temporarily_unavailable` +
+          `&error_description=${encodeURIComponent(description)}` +
+          `&state=${encodeURIComponent(state)}`,
+      ),
+    );
+
+    expect(result.type).toBe('failed');
+    if (result.type === 'failed') {
+      expect(result.error.serverCode).toBe('temporarily_unavailable');
+      expect(result.error.message).toBe(description);
+    }
+    // Nothing was exchanged: the attempt is spent and the user authorizes again later.
+    expect(transport.requests).toHaveLength(0);
+  });
+
   it('fails when no authorization is in progress', async () => {
     const { oauth } = build();
     const result = await completed(
