@@ -153,6 +153,88 @@ complete. If a future version ever caches full detail, the cache key must become
 `(query, detail, locale)` first — a minimal result must never satisfy a full request. The Kotlin,
 Swift and Flutter SDKs carry the identical gate.
 
+## Recording what a transaction was shown
+
+`read(key)` answers "what does Tracive say about this account **now**". A transaction-detail screen
+asks something else: "what was this user shown **before they sent the money**". Those two answers
+diverge, and the cache cannot give you the second one — it holds the latest answer per identifier and
+expires it as soon as it stops being trustworthy, so by the next morning a `NONE` result is gone and
+the card on yesterday's transfer would be blank.
+
+So record it against your own transaction id:
+
+```ts
+// 1. On the confirmation screen, before the PIN.
+const result = await client.checkScammer(query);
+showCheckResult(result); // tier, counts, and result.disclaimer
+
+// 2. Once the transfer exists and has a reference number.
+await client.cache.writeTransactionCheck(result, 'TRF26090814320771');
+
+// 3. Weeks later, on the transaction detail.
+const shown = await client.cache.readTransactionCheck('TRF26090814320771');
+if (shown !== undefined) renderSecurityCheckCard(shown); // never "no reports" when undefined
+```
+
+It is a separate call rather than an argument to `checkScammer` because of the order those two things
+happen in: the check runs on the confirmation screen, and the reference number is minted after the
+PIN. There is no transaction id to pass when the check is made.
+
+**Each record is a snapshot, not a pointer into the cache.** That is the whole design decision, and
+it is what makes the card truthful. A user transfers to the same account in September, when it is
+clean, and again in October, after it has been reported. A pointer would rewrite September's card to
+show October's verdict — an audit trail saying the user was warned before a transfer where they were
+shown nothing of the kind. Two records, two answers, neither one editing the other.
+
+**One check can serve several transactions.** The second transfer to an account you already checked
+is a cache hit: no request, no credit, and `writeTransactionCheck` called a second time with that
+transfer's id. Both details get a card, and the second one's `origin` is `'CACHE'`, which is how your
+UI knows that transfer spent nothing.
+
+|                               | `write` / `read`              | `writeTransactionCheck` / `readTransactionCheck`           |
+| ----------------------------- | ----------------------------- | ---------------------------------------------------------- |
+| Keyed on                      | the identifier                | your transaction id, hashed, under a `txn:` prefix         |
+| Lifetime                      | tier TTL, 1 hour to 30 days   | `transactionCheckRetentionSeconds`, 90 days by default     |
+| Server `cacheTtlSeconds`      | applied, including retraction | **not applied** — a record of the past cannot be retracted |
+| Overwritten by a later check  | yes                           | no                                                         |
+| `origin` on read              | rewritten to `'CACHE'`        | kept as recorded                                           |
+| `checkId`, `billing`          | dropped                       | kept — this record _is_ that one call                      |
+| `topChronologies`, `comments` | dropped                       | dropped                                                    |
+
+Both kinds of row live in one store. A cache key is 64 hex characters and `:` is not one of them, so
+a `txn:`-prefixed key cannot collide — which is what lets them share a table without a `kind` column.
+Such a column would sort a stolen database into "answers held" and "transfers made" before anyone had
+to decrypt a byte. The two also authenticate under different AAD labels (`tracive.cache.v1|…` and
+`tracive.record.v1|…`), so neither can be opened as the other.
+
+Four things to know before you build a screen on it:
+
+- **`undefined` means "no check is on file", never "nothing was found".** A transfer where the user
+  chose to skip the check has no record, and rendering that as a clean result invents a reassurance
+  nobody gave. Show nothing.
+- **The id is hashed, and it is matched verbatim** apart from a trim. `TRF-1` and `trf-1` are two
+  records; normalise your own reference before it gets here if its case can vary. A blank id rejects
+  with `CheckCacheError` kind `invalidTransactionId` rather than filing every unlabelled transfer
+  under one shared row.
+- **`clear()` takes the records with it**, so a Tracive sign-out empties the cards on transactions
+  that are still in your history. That follows from whose data it is: the verdict was read under a
+  grant that no longer exists. So does a bumped `schemaVersion` or a data key that is gone — the
+  records are in the same store and there is deliberately no column that could spare them, so do not
+  build a flow that _depends_ on a record still being there. The card is something a transaction
+  detail shows when it can; the audit trail is the `riskAccepted` / `riskAcceptedAt` pair on your own
+  server.
+- **Records are counted by `maxEntries`** and, with the defaults, evicted last: eviction drops
+  whatever is closest to expiry, and 90 days outlives every tier TTL. That ordering is a consequence
+  of the numbers, not a rule — raise a tier TTL above the retention, or lower the retention below
+  one, and records start going first. An evicted cache entry costs a credit to replace; an evicted
+  record cannot be replaced at all.
+
+And the reason this lives in the SDK rather than in your backend: the partner terms forbid uploading
+Tracive results, derived values included — a risk tier and a report count are as much our database as
+the rows behind them. Local storage on the user's own device is the permitted place for them, which
+is exactly what these rows are. What may go to your server is the user's _decision_: `riskAccepted`,
+`riskAcceptedAt`. That is the audit trail you can defend, and it contains no result at all.
+
 ## Encryption
 
 Each row is an AES-256-GCM envelope: `version byte || 96-bit nonce || ciphertext || 128-bit tag`,

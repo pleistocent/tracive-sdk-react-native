@@ -32,6 +32,24 @@ export interface CachePolicy {
    * omitting the field is the only way to ask for an unbounded cache, which is intentional.
    */
   readonly maxEntries?: number;
+  /**
+   * How long a transaction record — the answer that was shown for one of your transactions — is
+   * kept. Zero or less stores none at all.
+   *
+   * A separate knob from the TTLs above because it answers a different question. A TTL asks "is this
+   * verdict still worth trusting?", and an hour is right for a clean one. A retention asks "can the
+   * user still see what they were told before they sent the money?", and that does not decay: the
+   * record is a fact about the past, so the only thing that should end it is the host's own
+   * data-minimisation policy.
+   *
+   * 90 days matches how far back a transaction list is usually browsed. Raise it if your history
+   * screen goes back further — and raise `maxEntries` with it, since records are counted by the same
+   * cap as cache entries.
+   *
+   * `honorsServerTtlOverride` does not reach these. `cacheTtlSeconds` retracts a verdict the backend
+   * no longer stands behind, which is the wrong lever for a record of what a user was already shown.
+   */
+  readonly transactionCheckRetentionSeconds: number;
 }
 
 const DEFAULT_POLICY: CachePolicy = {
@@ -42,6 +60,7 @@ const DEFAULT_POLICY: CachePolicy = {
   noneTtlSeconds: 3_600,
   honorsServerTtlOverride: true,
   maxEntries: 5_000,
+  transactionCheckRetentionSeconds: 7_776_000,
 };
 
 const DISABLED_POLICY: CachePolicy = { ...DEFAULT_POLICY, enabled: false };

@@ -1,3 +1,4 @@
+import type { Billing } from '../model/Billing';
 import { CachePolicy } from '../model/CachePolicy';
 import type { CheckResult } from '../model/CheckResult';
 import { isRiskTier } from '../model/enums';
@@ -77,6 +78,48 @@ export function decodeCacheableResult(json: string): CheckResult {
     // A replay is always labelled as one, whatever the stored bytes claim.
     origin: 'CACHE',
     fetchedAt: new Date(parsed.fetchedAtMs ?? 0),
+  };
+}
+
+/** [StoredResult] plus the three fields a record keeps and a cache entry does not. */
+interface StoredRecord extends StoredResult {
+  checkId?: string;
+  billing?: Billing;
+  origin?: string;
+}
+
+/**
+ * A transaction record on its way to disk.
+ *
+ * Separate from {@link encodeCacheableResult} rather than a flag on it, because the two projections
+ * differ in the direction that matters: this one keeps `checkId`, `billing` and the original
+ * `origin`, and a single function with a boolean would make the wrong one a typo away.
+ */
+export function encodeTransactionRecord(result: CheckResult): string {
+  const stored: StoredRecord = {
+    ...(JSON.parse(encodeCacheableResult(result)) as StoredResult),
+    ...(result.checkId !== undefined ? { checkId: result.checkId } : {}),
+    ...(result.billing !== undefined ? { billing: result.billing } : {}),
+    origin: result.origin,
+  };
+  return JSON.stringify(stored);
+}
+
+/**
+ * A transaction record on the way back.
+ *
+ * The stored `origin` is kept rather than replaced with `'CACHE'`. That is the one difference from
+ * {@link decodeCacheableResult} and it is load-bearing: a record made from a live check says a
+ * credit was spent on that transfer, and one made from a cache hit says none was.
+ */
+export function decodeTransactionRecord(json: string): CheckResult {
+  const base = decodeCacheableResult(json);
+  const parsed = JSON.parse(json) as StoredRecord;
+  return {
+    ...base,
+    ...(typeof parsed.checkId === 'string' ? { checkId: parsed.checkId } : {}),
+    ...(parsed.billing !== undefined ? { billing: parsed.billing } : {}),
+    origin: parsed.origin === 'SERVER' ? 'SERVER' : 'CACHE',
   };
 }
 

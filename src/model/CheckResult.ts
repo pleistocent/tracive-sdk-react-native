@@ -49,6 +49,42 @@ export interface CheckResult {
  * no locale. If a future version ever caches full detail, the cache key must become
  * `(query, detail, locale)` first: a `minimal` result must never satisfy a `full` request.
  */
+/**
+ * The projection that is safe to keep against a transaction.
+ *
+ * A transaction record is read back under the transaction it was filed for and never under another
+ * request, so almost everything survives — including the fields `toCacheableCopy` drops for reasons
+ * that do not apply here. `checkId` and `billing` describe one call, which is exactly what this
+ * record is; keeping them is what lets a support agent reconcile the charge and a UI say whether
+ * that transfer spent a credit. `origin` and `fetchedAt` are kept as they are, not restamped,
+ * because the record is a statement about a past moment: a second transfer to an account already
+ * checked was served from the cache, spent nothing, and should say so.
+ *
+ * `topChronologies` and `comments` go, and that is the one deliberate loss. They are other people's
+ * accounts of being defrauded, written in prose; a record lives for months rather than hours, and
+ * nothing on a transaction-detail screen shows them.
+ */
+export function toTransactionRecordCopy(result: CheckResult): CheckResult {
+  return {
+    ...(result.checkId !== undefined ? { checkId: result.checkId } : {}),
+    found: result.found,
+    riskTier: result.riskTier,
+    reportTotal: result.reportTotal,
+    credibleReports: result.credibleReports,
+    ambiguousReports: result.ambiguousReports,
+    ...(result.firstReportOn !== undefined ? { firstReportOn: result.firstReportOn } : {}),
+    ...(result.lastReportOn !== undefined ? { lastReportOn: result.lastReportOn } : {}),
+    fraudAmount: result.fraudAmount,
+    tags: result.tags,
+    relatedScammerCount: result.relatedScammerCount,
+    ...(result.billing !== undefined ? { billing: result.billing } : {}),
+    ...(result.cacheTtlSeconds !== undefined ? { cacheTtlSeconds: result.cacheTtlSeconds } : {}),
+    ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
+    origin: result.origin,
+    fetchedAt: result.fetchedAt,
+  };
+}
+
 export function toCacheableCopy(result: CheckResult): CheckResult {
   return {
     found: result.found,

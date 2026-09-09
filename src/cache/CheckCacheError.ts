@@ -4,7 +4,13 @@ export type CheckCacheErrorKind =
   | 'dataKeyUnavailable'
   | 'dataKeyCorrupt'
   | 'encryptionFailed'
-  | 'payloadUnreadable';
+  | 'payloadUnreadable'
+  /**
+   * A transaction record was addressed with a blank id. Caller error rather than a storage fault,
+   * and reported rather than ignored: a blank id would file every unlabelled transfer under one
+   * shared row, so the next read would hand a transaction someone else's verdict.
+   */
+  | 'invalidTransactionId';
 
 /**
  * Local storage faults, deliberately a separate family from `TraciveError` because the remedy is

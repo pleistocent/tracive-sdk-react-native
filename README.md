@@ -401,6 +401,37 @@ await client.checkScammer(query, { source: 'CACHE_FIRST' }); // default
 | `SERVER_FIRST` | Fetch; fall back to the cache only when the failure was transport-shaped. A 402 or a 403 is a real answer about your account and is never masked by a cached verdict.                   |
 | `CACHE`        | Cache only. A miss throws `cacheMiss`; a storage _fault_ surfaces as itself, because answering "no reports" when the truth is "the disk is broken" would be a fabricated clean verdict. |
 
+### Showing the check again on a transaction detail
+
+A cache read answers "what does Tracive say about this account now". A transaction-detail screen asks
+"what was this user shown before they sent the money" — a different question, and one the cache cannot
+answer, because it keeps only the latest verdict per account and drops a clean one after an hour.
+Record it against your own transaction id instead:
+
+```ts
+// Once the transfer exists and has a reference number.
+await client.cache.writeTransactionCheck(result, 'TRF26090814320771');
+
+// Weeks later. undefined = no check on file; render nothing, never "no reports found".
+const shown = await client.cache.readTransactionCheck('TRF26090814320771');
+if (shown !== undefined) renderSecurityCheckCard(shown);
+```
+
+Each record is a snapshot on its own 90-day retention, so a later check of the same account cannot
+rewrite an older transaction's card, and one check can be recorded against several transactions — the
+second transfer to an account you already checked costs nothing and still gets a card. Full rules in
+[docs/caching.md](docs/caching.md#recording-what-a-transaction-was-shown).
+
+**When to do each of those:** run the check on the confirmation screen, before the PIN — the user has
+seen the payee and the amount, and can still change their mind for free — and only on a first transfer
+to a given account, plus a manual "check this payee" action. Record it once per transaction, for every
+transfer that had a check, including the one where the user was warned and continued anyway. Never
+record when the user declined the check: no record is the truth, and an empty result rendered as "no
+reports found" invents a reassurance nobody gave. And none of it may go to your own servers — the
+partner terms forbid uploading Tracive results, derived values like a tier or a count included. What
+may leave the device is the user's decision (`riskAccepted`, `riskAcceptedAt`), which is enough to
+defend the transfer in a dispute.
+
 ### `detail: 'full'` never touches the cache
 
 The table above describes `detail: 'minimal'`, which is the default and the **only** detail level

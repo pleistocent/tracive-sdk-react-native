@@ -2,14 +2,20 @@ import { systemClock, type TraciveClock } from '../client/TraciveClock';
 import { defaultRandom, type TraciveRandom } from '../crypto/random';
 import { utf8Decode, utf8Encode } from '../crypto/utf8';
 import { CachePolicy } from '../model/CachePolicy';
-import { toCacheableCopy, type CheckResult } from '../model/CheckResult';
+import { toCacheableCopy, toTransactionRecordCopy, type CheckResult } from '../model/CheckResult';
 import { AesGcmCacheCipher, type CacheCipher } from './CacheCipher';
 import { InMemoryCacheKeyStore, type CacheKeyStore } from './CacheKeyStore';
 import type { CheckCache } from './CheckCache';
 import { CheckCacheError } from './CheckCacheError';
-import type { CheckCacheKey } from './CheckCacheKey';
+import { TRANSACTION_KEY_PREFIX, transactionKeyHex, type CheckCacheKey } from './CheckCacheKey';
 import type { CheckCacheStore } from './CheckCacheStore';
-import { decodeCacheableResult, encodeCacheableResult, expiresAtMsFor } from './payload';
+import {
+  decodeCacheableResult,
+  decodeTransactionRecord,
+  encodeCacheableResult,
+  encodeTransactionRecord,
+  expiresAtMsFor,
+} from './payload';
 
 /**
  * The additional authenticated data binds a record to both the schema version and its own cache
@@ -18,6 +24,18 @@ import { decodeCacheableResult, encodeCacheableResult, expiresAtMsFor } from './
  */
 function aadFor(schemaVersion: number, keyHex: string): Uint8Array {
   return utf8Encode(`tracive.cache.v${schemaVersion}|${keyHex}`);
+}
+
+/**
+ * The same binding for a transaction record, under its own label.
+ *
+ * Records share the table with cached answers, so the label is what stops a 90-day-old record being
+ * served as a live answer to a check — or the reverse — by anyone with write access to the file.
+ * It binds the bare digest, not the prefixed row key: the prefix is how the store tells the rows
+ * apart, and the label is how the cipher does.
+ */
+function recordAadFor(schemaVersion: number, keyHex: string): Uint8Array {
+  return utf8Encode(`tracive.record.v${schemaVersion}|${keyHex}`);
 }
 
 export interface PersistentCheckCacheOptions {
@@ -142,6 +160,75 @@ export class PersistentCheckCache implements CheckCache {
 
   async remove(key: CheckCacheKey): Promise<void> {
     await this.#guard('storageFailure', () => this.#store.delete(key.hex));
+  }
+
+  async writeTransactionCheck(result: CheckResult, transactionId: string): Promise<void> {
+    // Derived first: a blank id is the caller's mistake and must surface as itself, not as whatever
+    // the storage guard below would turn it into.
+    const keyHex = transactionKeyHex(transactionId);
+    const rowKey = TRANSACTION_KEY_PREFIX + keyHex;
+    if (!this.policy.enabled) return;
+
+    const retentionSeconds = this.policy.transactionCheckRetentionSeconds;
+    if (retentionSeconds <= 0) {
+      // Retention off takes the records already written with it.
+      await this.#guard('storageFailure', () => this.#store.delete(rowKey));
+      return;
+    }
+
+    const record = toTransactionRecordCopy(result);
+    const cipher = await this.#resolveCipher();
+    const payload = cipher.seal(
+      utf8Encode(encodeTransactionRecord(record)),
+      recordAadFor(this.#schemaVersion, keyHex),
+    );
+
+    await this.#guard('storageFailure', () =>
+      this.#store.put({
+        keyHex: rowKey,
+        payload,
+        fetchedAtMs: record.fetchedAt.getTime(),
+        // Measured from now, not from `fetchedAt`. A cache entry expires when its verdict goes
+        // stale; a record expires when the host stops wanting the history.
+        expiresAtMs: this.#clock.nowMs() + retentionSeconds * 1000,
+      }),
+    );
+    await this.#enforceMaxEntries();
+  }
+
+  async readTransactionCheck(transactionId: string): Promise<CheckResult | undefined> {
+    const keyHex = transactionKeyHex(transactionId);
+    const rowKey = TRANSACTION_KEY_PREFIX + keyHex;
+    if (!this.policy.enabled) return undefined;
+
+    const row = await this.#guard('storageFailure', () => this.#store.get(rowKey));
+    if (row === undefined) return undefined;
+
+    // The row's own expiry, and nothing else. `CachePolicy.isFresh` asks whether a verdict is still
+    // worth trusting, measured from `fetchedAt`; a record whose verdict went stale months ago is
+    // still the right answer to "what was this user shown".
+    if (this.#clock.nowMs() >= row.expiresAtMs) {
+      await this.#guard('storageFailure', () => this.#store.delete(rowKey));
+      return undefined;
+    }
+
+    const cipher = await this.#resolveCipher();
+    try {
+      const plaintext = cipher.open(row.payload, recordAadFor(this.#schemaVersion, keyHex));
+      return decodeTransactionRecord(utf8Decode(plaintext));
+    } catch (error) {
+      this.#lastStoreError =
+        error instanceof CheckCacheError
+          ? error
+          : new CheckCacheError('payloadUnreadable', 'The cache record could not be read.', error);
+      await this.#guard('storageFailure', () => this.#store.delete(rowKey));
+      return undefined;
+    }
+  }
+
+  async removeTransactionCheck(transactionId: string): Promise<void> {
+    const rowKey = TRANSACTION_KEY_PREFIX + transactionKeyHex(transactionId);
+    await this.#guard('storageFailure', () => this.#store.delete(rowKey));
   }
 
   async clear(): Promise<void> {

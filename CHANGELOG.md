@@ -6,15 +6,73 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A check can now be recorded against your own transaction, so a transaction-detail screen can show
+  it again later.** `client.cache` gains `writeTransactionCheck`, `readTransactionCheck` and
+  `removeTransactionCheck`.
+
+  ```ts
+  await client.cache.writeTransactionCheck(result, 'TRF26090814320771'); // once it has a reference
+  await client.cache.readTransactionCheck('TRF26090814320771'); // undefined = none on file
+  ```
+
+  There was no way to do this before, and the near-miss was worse than the gap: `checkScammer(query,
+{ source: 'CACHE' })` looks like it answers the question and does not. It returns the **latest**
+  answer for that account rather than the one the user was shown, and it returns nothing at all once
+  the tier TTL has run out — an hour, for a clean verdict. So the card on yesterday's transfer was
+  either blank or, after the account was reported, quietly rewritten to claim the user had been
+  warned.
+
+  Each record is therefore a **snapshot**, not a pointer into the cache: a later check of the same
+  account cannot edit an earlier transaction's card. One check can be recorded against several
+  transactions — the second transfer to an account you already checked is a cache hit, so it costs no
+  credit, and its record carries `origin: 'CACHE'` to say so. Retention is
+  `CachePolicy.transactionCheckRetentionSeconds`, 90 days by default, and `cacheTtlSeconds` is
+  deliberately not applied to it: that field retracts a verdict the backend no longer stands behind,
+  which is the wrong lever for a record of what someone was already shown.
+
+  It is a separate call rather than an argument to `checkScammer` because of when the two things
+  happen: the check runs on the confirmation screen and the reference number is minted after the PIN,
+  so there is no transaction id to pass at check time.
+
+  Storage-wise this is the same store, the same data key and the same `clear()` on sign-out. Records
+  are keyed `txn:` + `SHA-256(transactionId)` — the id is hashed like an identifier is, because in
+  cleartext beside an encrypted verdict it would say which transfers a device holds a fraud answer
+  for — and they authenticate under their own AAD label (`tracive.record.v1|…`), so a record and a
+  cached answer can never be opened as one another. `checkId` and `billing` are kept, unlike in a
+  cache entry, because the record _is_ that one call and those are what a dispute is reconciled
+  against; report narratives are dropped, because nothing on a transaction detail shows them and a
+  90-day archive of other people's accounts of being defrauded is not something to keep on a phone.
+
+  This is also the supported way to build that screen at all. The partner terms forbid uploading
+  Tracive results to your own servers, derived values included; local storage on the user's device is
+  where they may live. What may go to your server is the user's decision — `riskAccepted`,
+  `riskAcceptedAt` — which is the audit trail you can defend and contains no result.
+
+### Breaking
+
+- **`CheckCache` has three more members**, and `CheckCacheErrorKind` a new `invalidTransactionId`
+  value. Anyone implementing the interface themselves — a test double, or a host that swapped the
+  storage — has to add `writeTransactionCheck`, `readTransactionCheck` and `removeTransactionCheck`,
+  and an exhaustive `switch` over the error kind gains an arm. There are no defaults on purpose: one
+  that silently kept nothing would leave a partner with a transaction-detail card that is always
+  empty and nothing to say why. `InMemoryCheckCache`, `PersistentCheckCache` and `NoOpCheckCache` are
+  unaffected, and so is every caller that only uses `client.cache`.
+
+  Note the one contract detail worth copying if you write your own: a blank id must arrive as a
+  **rejected promise**, never as a synchronous throw out of a call whose type says `Promise`.
+
 ### Fixed
+
 - **The quick start in `README.md` did not compile.** It omitted `partnerUserId`, which the OAuth
   configuration requires and gives no default, so the first thing anyone starting from the README
   met was a type error. The field is now in the snippet, and every value a partner has to supply
   carries a `TODO(partner)` marker so it travels into their code with the snippet they copied.
 
 - **`npx tracive-doctor` rejected a correct manifest.** It required a `<package android:name=...>`
-  entry alongside the scheme `<intent>` queries and said so — *"Both the `<package>` entry and the
-  scheme `<intent>` are needed"* — which is not true. The probe resolves an intent, which the scheme
+  entry alongside the scheme `<intent>` queries and said so — _"Both the `<package>` entry and the
+  scheme `<intent>` are needed"_ — which is not true. The probe resolves an intent, which the scheme
   query answers; measured on an API 36 device, a scheme-only query makes the target visible with no
   `<package>` entry present. A project configured the right way exited 1 and was told to add a line
   that does nothing.
@@ -33,16 +91,16 @@ All notable changes to this project are documented here. The format follows
   that pinned this value across the flow, the doctor and the plugin now pins `TRACIVE_APP_SCHEMES`
   instead, which is the value those three actually have to agree on.
 
-
 Audit follow-up. Nothing here is a published change yet — 0.1.0 has not shipped — so this section
 records what a reader of the 0.1.0 notes above would otherwise be misled by.
 
 ### Added
+
 - **`access_denied` is not the only refusal, and now the OAuth guide says so.** The authorization
   server can end a consent with other codes, and the one it actually sends is
   `temporarily_unavailable` — for two situations that look identical to your app and are not the
   same to the user: the partner organisation has not accepted the current terms, or the device has
-  reached its daily limit on new connections to your app. Neither is a refusal by *this* user, and
+  reached its daily limit on new connections to your app. Neither is a refusal by _this_ user, and
   both resolve on their own if the user retries later.
 
   This SDK has always passed the raw code through, but nothing told a partner to read it, so the
