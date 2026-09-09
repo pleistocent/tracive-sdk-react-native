@@ -1,0 +1,250 @@
+name: Release
+
+# ---------------------------------------------------------------------------------------------
+# One dispatch cuts a whole release: gates, npm, the tag, the GitHub release.
+#
+# CONTRIBUTING.md says the first publish is a human action, because a scoped package publishes as
+# restricted by default and a silently-restricted package looks exactly like a published one. That
+# reasoning is kept and answered rather than overridden: this workflow passes `--access public`
+# explicitly, and then asks the registry *anonymously* whether the version is really there. A
+# restricted package answers 404 to that request, so the failure that used to be silent is now the
+# thing that fails the job.
+#
+# Read docs/RELEASING.md before the first run. Publishing needs an npm token that does not exist
+# yet, and the `@tracive` scope has to exist on npm first — `dry_run` is the mode that works today.
+# ---------------------------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.1.0 — no "v" prefix'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run every check and pack the tarball, but publish nothing and tag nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # A published npm version cannot be replaced, so two runs of the same version must never overlap.
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags, so the "already released" check below can see them. Set explicitly rather than
+          # left to fall out of fetch-depth: without it the check silently passes on every run.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate the version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version '$VERSION' — expected x.y.z with no 'v' prefix"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+      - name: package.json agrees this is the version
+        run: |
+          # npm publishes whatever package.json says, not what the dispatch said. A mismatch would
+          # put one version on the registry under another version's tag, permanently.
+          DECLARED="$(node -p "require('./package.json').version")"
+          if [ "$DECLARED" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::package.json says $DECLARED but this run asked for ${{ steps.version.outputs.version }} — bump one of them"
+            exit 1
+          fi
+
+      - name: The changelog has a section for this version
+        run: |
+          # The GitHub release body comes out of CHANGELOG.md, so a missing section is a release
+          # with no notes. It is also the check that catches the commonest mistake in this
+          # procedure: publishing with the changes still sitting under `## [Unreleased]`.
+          VERSION="${{ steps.version.outputs.version }}"
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1 { inside = 1; next }
+            inside && index($0, "## ") == 1 { exit }
+            inside { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section, or it is empty — move the entries out of [Unreleased] first"
+            exit 1
+          fi
+          echo "Release notes ($(wc -l < release-notes.md) lines):"
+          cat release-notes.md
+
+      - name: This version has not been released already
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists — bump the version"
+            exit 1
+          fi
+          # A published npm version can be deprecated but not replaced, and unpublish is only
+          # available for 72 hours and takes the whole version with it.
+          url="https://registry.npmjs.org/@tracive%2Fsdk-react-native/$VERSION"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || echo 000)"
+          case "$code" in
+            200)
+              echo "::error::@tracive/sdk-react-native@$VERSION is already on npm and cannot be replaced — bump the version"
+              exit 1
+              ;;
+            404) echo "Not on npm yet, which is what we want" ;;
+            *) echo "::warning::Could not tell whether $VERSION is on npm (HTTP $code) — continuing; npm rejects a duplicate itself" ;;
+          esac
+
+      - name: Publishing credentials are present
+        if: ${{ !inputs.dry_run }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # A missing token otherwise surfaces as an npm ENEEDAUTH at the end of the run, which
+          # reads like a registry outage rather than repository setup.
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::Missing repository secret NPM_TOKEN — see docs/RELEASING.md"
+            exit 1
+          fi
+
+      - name: Keep the release notes for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 1
+
+  # The same gates CI runs, on both supported Node versions. They are not automatic in this
+  # repository, so without this a release could be cut from code nothing has ever checked.
+  verify:
+    name: Verify
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: [preflight, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # The tag and the GitHub release. Everything else in this workflow reads.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit this dispatch started from, not whatever main has become since.
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor in `engines`, not the newest available: if the package only builds on a
+          # newer Node than it claims to support, that should be found here rather than by a
+          # partner.
+          node-version: '20.19'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Install and build
+        # Same shape as ci.yml: install without running lifecycle scripts, then build explicitly.
+        # `bob build` would otherwise run twice — once from `prepare` on install and again from
+        # `prepare` on publish — and the bits that ship should be the ones the packaging check in
+        # `verify` actually looked at.
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Pack without publishing
+        if: ${{ inputs.dry_run }}
+        run: |
+          npm pack
+          echo "Tarball contents:"
+          tar -tzf ./*.tgz | sort
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # `--access public` is passed even though package.json's publishConfig already says so.
+        # This is the failure CONTRIBUTING.md is worried about: a scope defaults to restricted, and
+        # a restricted publish succeeds — it just produces a package nobody outside the org can
+        # install. Saying it twice costs nothing; the check after this step is what actually proves
+        # it.
+        #
+        # `--ignore-scripts` because the build above already ran; without it `prepare` rebuilds and
+        # ships something the packaging check never saw.
+        run: npm publish --access public --ignore-scripts
+
+      - name: The published version is actually public
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # Asked without credentials, on purpose. A restricted package answers 404 to an anonymous
+          # request — which is precisely what a partner's `npm install` would get, and precisely
+          # the silent failure this check exists to make loud.
+          VERSION="${{ needs.preflight.outputs.version }}"
+          url="https://registry.npmjs.org/@tracive%2Fsdk-react-native/$VERSION"
+          for attempt in 1 2 3 4 5; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || echo 000)"
+            if [ "$code" = "200" ]; then
+              echo "Anonymous fetch of $VERSION: 200 — installable by anyone"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP $code, waiting for the registry"
+            sleep 15
+          done
+          echo "::error::$VERSION is on npm but an anonymous fetch still returns $code after 75s. If it stays that way the package published restricted — fix with: npm access public @tracive/sdk-react-native"
+          exit 1
+
+      - name: Tag and create the GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          # After the publish, not before. An npm version cannot be replaced and a tag can: if this
+          # step fails the package is still out and the tag can be pushed by hand, which is the
+          # cheaper of the two half-states. The reverse order leaves a release announcing a package
+          # that does not exist.
+          git tag -a "v$VERSION" -m "v$VERSION" "${{ github.sha }}"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          {
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "### Dry run of $VERSION"
+              echo ""
+              echo "Every gate passed and the tarball packed. Nothing was published and nothing was tagged."
+            else
+              echo "### Released $VERSION"
+              echo ""
+              echo "\`npm install @tracive/sdk-react-native@$VERSION\` — confirmed installable by an anonymous fetch, so the scope did not publish restricted."
+              echo ""
+              echo "- [npm](https://www.npmjs.com/package/@tracive/sdk-react-native/v/$VERSION)"
+              echo "- [GitHub release](https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v$VERSION)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
