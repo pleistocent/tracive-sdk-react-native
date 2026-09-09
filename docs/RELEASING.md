@@ -1,6 +1,6 @@
 # Releasing the React Native SDK
 
-Anyone with **write** access to this repository can cut a complete release: the gates, npm, the tag
+A **maintainer** of this repository — `admin` or `maintain`, see [Who can release](#who-can-release) — can cut a complete release: the gates, npm, the tag
 and the GitHub release all come out of one workflow dispatch.
 
 One thing has to be set up first and it is not done yet. Read
@@ -80,6 +80,25 @@ so it is an upgrade for later rather than a way to start.
 Not enabled. `--provenance` requires a public repository, and this one is private; turning it on
 would fail the publish rather than add anything. When the repository goes public it is one flag
 plus `id-token: write` on the publish job.
+
+## Who can release
+
+The `authorize` job runs first and fails the workflow unless the person who dispatched it is
+`admin` or `maintain` on this repository. `workflow_dispatch` already requires write access, so
+what this adds is the gap between "anyone who can push" and "someone who owns this package" — and
+for an SDK that ships into partner apps, those are not the same set.
+A published npm version cannot be replaced.
+
+The native way to express this would be a GitHub
+[environment](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+with required reviewers, which would also give an approve button. It is not available: environments
+on a **private** repository need GitHub Pro or Team, and the `pleistocent` organisation is on Free.
+If the plan changes, an environment is the better mechanism — it is enforced by GitHub rather than
+by a step, and it survives someone editing the workflow.
+
+Granting a collaborator `maintain` rather than `write` is what makes them a releaser. Both current
+collaborators are `admin`, so the rule changes nothing today; it is there for the first person
+added with `write`.
 
 ## When something goes half-wrong
 
