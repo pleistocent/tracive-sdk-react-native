@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Tracive RN",
+    "slug": "tracive-rn-sdk-example",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "id.tracive.sdk.example.rn",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "id.tracive.sdk.example.rn",
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "@tracive/sdk-react-native/app.plugin.js",
+        { "redirectUri": "https://example.tracive.id/oauth/callback" }
+      ]
+    ],
+    "extra": {
+      "tracive": {
+        "redirectUri": "https://example.tracive.id/oauth/callback"
+      }
+    }
+  }
+}

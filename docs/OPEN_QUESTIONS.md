@@ -6,56 +6,48 @@ would otherwise have to discover for themselves. Entries that have since been se
 
 ---
 
-## 1. There is no on-device conformance run
+## 1. The conformance run is manual; nothing runs it for you
 
-**The Jest suite proves nothing about the device engine.** Jest runs on Node with full ICU, so the
-grammar vectors pass there regardless of how Hermes behaves. The plan this implementation was built
-to also called for an example app that runs the same fixture in-app on an Android emulator in CI,
-and that is the only check in the whole design that can fail for the reason the fixture exists.
+`example/` now folds both shared fixtures on the device engine, and that is the check this
+repository was missing — see [Resolved](#resolved) for what it measured. What is still missing is
+automation: the panel is on a screen somebody has to open, on an emulator somebody has to boot. A
+regression in the fold would be caught by whoever next launches the example, and by nothing else.
 
-**It was not built.** This run had no Android SDK, no emulator and no way to verify such a job
-actually runs, and shipping a CI workflow that had never executed would be worse than saying so.
-Consequences that remain unverified on a real device:
+The remaining work is the Android emulator job the plan called for: boot the app in CI and assert
+the panel's counts. It is not written here because no workflow in this repository has ever run —
+`.github/` is manual-dispatch only — and shipping an emulator job that had never executed would
+repeat the mistake this page exists to record.
 
-- Hermes' `String.prototype.normalize` composing correctly on Android (it routes through a JNI call
-  to the platform normalizer, which is spec-correct by documentation, not by execution here);
-- the locale-invariant case mappings `ß -> SS` and `İ -> i` + U+0307 on Android's `libcore`;
-- that the 25-code-point trim set and the ASCII-only `\D` class behave identically on Hermes.
+## 2. The declared React Native floor is reasoned, not built
 
-The `nfc_unavailable` and `case_mapping_unavailable` guards convert the first two of these from a
-silent wrong answer into a loud throw, but a guard is not a measurement. The trim set and the `\D`
-class remain unguarded, and deliberately so: neither can be probed without hard-coding the very
-table this SDK exists not to hand-write. **Building the on-device job is the highest-value next
-piece of work in this repository.**
+`peerDependencies` declares `react-native >=0.76.0`. The example is built on Expo SDK 55 and React
+Native 0.83.10, so what is measured is that the SDK works **there**. The floor itself is untested.
+If a 0.76 build turns out to fail, lower the declared floor rather than shipping an untested claim.
 
-## 2. The example app was not built either
+The optional peer floors carry the same gap and for the same reason: `expo-secure-store >=13`,
+`expo-sqlite >=14`, `expo-crypto >=15` and `@expo/config-plugins >=54` were taken from each
+package's _latest_ version at the time of writing, and the example exercises the 55.x line of every
+one of them. The oldest version whose API the adapters actually compile against is still unknown.
 
-No `example/` directory exists, so:
+The example is on 55 rather than the current 57 for a toolchain reason worth recording here, since
+it will look like an oversight otherwise: Expo 56 and 57 declare `weak let` in their own Swift
+sources, which the installed Xcode 26.1.1 (Swift 6.2.1) rejects in every language mode it accepts.
+Nothing in this repository is involved, and Xcode 26.2 should lift it.
 
-- the declared React Native floor of `>=0.76.0` is **reasoned, not built**. If a 0.76 build turns
-  out to fail, lower the declared floor rather than shipping an untested claim;
-- `npx tracive-doctor` has never been run against a real generated project. Its checks are unit
-  tested against realistic manifest, plist and entitlements fixtures on disk, including the
-  merged-manifest preference, but not against output from a real `expo prebuild`;
-- the Expo config plugin has **never been executed end to end**. It is written against the real
-  `@expo/config-plugins` types and typechecks. Its `<queries>` merge is now unit tested directly
-  against manifest fragments, including one seeded with another plugin's entries, but nothing here
-  has run a real `expo prebuild`.
+## 3. The `bare` adapter subpath is unexercised, and typed against hand-written declarations
 
-## 3. The adapter subpaths are unexercised, and typed against hand-written declarations
+`src/bare/**` statically imports `@op-engineering/op-sqlite` and `react-native-keychain`, neither of
+which this repository installs — op-sqlite alone unpacks to roughly 360 MB. Two consequences:
 
-`src/expo/**` and `src/bare/**` statically import optional peer dependencies that this repository
-deliberately does not install — `@op-engineering/op-sqlite` alone unpacks to roughly 360 MB, and the
-Expo packages drag in the whole Expo module infrastructure. Two consequences:
-
-- their APIs are typechecked against **minimal ambient declarations** in `src/types/optional-peers.d.ts`,
+- its API is typechecked against **minimal ambient declarations** in `src/types/optional-peers.d.ts`,
   not against the real packages. If an upstream signature differs, this repository will not notice;
-- they are excluded from coverage collection, because a coverage number for code that cannot be
-  loaded would be a fiction. They are unexercised code. That is what this entry is for.
+- it is excluded from coverage collection, because a coverage number for code that cannot be loaded
+  would be a fiction.
 
-Before 1.0, build them against a real dependency matrix and tighten the peer floors — those floors
-were taken from each package's _latest_ version, not from the oldest version whose API the adapter
-actually compiles against.
+`src/expo/**` was in exactly this position and no longer is (see [Resolved](#resolved)); `example/`
+installs the Expo peers and none of the bare ones. Closing this one means a second example, or a
+second flavour of the existing one, wired to the bare adapters. Do it before 1.0, and tighten the
+peer floors while the real dependency matrix is in front of you.
 
 ## 4. Deviations from the frozen plan, and why
 
@@ -176,6 +168,37 @@ advisories stay a documented judgement, and this paragraph is where that judgeme
 ## Resolved
 
 Kept here so a reader who remembers an entry finds its outcome rather than a gap in the numbering.
+
+- **The on-device conformance run** (was item 1, in part). `example/` executes both vendored
+  fixtures through the public surface on the device's own engine: 34 grammar vectors, 12 of the 14
+  grammar rejections, 20 phone vectors, 19 phone rejections, the 25-code-point trim set plus the one
+  code point that must survive it, the two length-changing case mappings, an NFC composition, and
+  `\D` being ASCII-only. 115 cases, all passing on Hermes on an Android emulator (API 24) and on an
+  iPhone 16 Pro simulator (iOS 18.6). That covers the two behaviours the SDK deliberately leaves
+  unguarded — the trim set and the ASCII digit class — which no probe inside the SDK could ever
+  check without hand-writing the very table it exists not to hand-write. The two `RAW` rejections
+  and the nine `documentIdGuard` cases stay Jest-only: they drive the internal record-key guard,
+  which the public surface does not expose, and the panel reports them as skipped rather than
+  dropping them silently.
+  Item 1 above is what remains: the run is manual.
+
+- **`npx tracive-doctor` against a real generated project, and the Expo config plugin end to end**
+  (was item 2, in part). `npx expo prebuild` ran the plugin for the first time. It wrote the
+  `LSApplicationQueriesSchemes` entries, the `applinks:` entitlement and the `autoVerify`
+  intent-filter, and its `<queries>` merge kept the `https` intent Expo's own template had already
+  put there rather than replacing it — the case the merge was written for, exercised against a real
+  prebuild instead of a fragment. `tracive-doctor` then ran against the generated project and
+  reported nothing, both with an explicit `--redirect-uri` and reading
+  `expo.extra.tracive.redirectUri` from `app.json`. It was also shown to fail: deleting the
+  intent-filter makes it exit 1 naming the host, which is the difference between a passing check
+  and a check that cannot fail.
+
+- **The Expo adapter subpath, against the real packages** (was item 3, in part). `src/expo/**` is no
+  longer typed only against `src/types/optional-peers.d.ts`: the example resolves the real
+  `expo-secure-store`, `expo-sqlite` and `expo-crypto`, and a cache hit after `am force-stop` — a
+  new process, zero calls to the injected transport, the previous process's `fetchedAt` — exercises
+  the SQLite rows, the keychain round-trip of the AES-GCM data key and the decrypt path together. A
+  simulated 401 exercises the refresh and the replay through the same secure store.
 
 - **The record-key guard and a key containing a newline** (was item 10). The reserved-key rule is
   `^__.*__$`, and `.` does not match a line terminator without the `s` flag, so the server ACCEPTS

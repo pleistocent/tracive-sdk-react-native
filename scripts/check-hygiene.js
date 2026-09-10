@@ -58,6 +58,17 @@ const SCANNER_OWN_FILES = new Set([
 const MAX_SCANNED_BYTES = 2_000_000;
 
 const SKIP_DIRECTORIES = new Set(['node_modules', '.git', 'lib', 'coverage', 'android', 'ios']);
+// An npm lockfile is a machine-written transcript of the public registry, not prose anybody here
+// wrote, and it names every transitive package. `example/`'s tree contains a bin entry called
+// `expo-internal`, which matches the `<something>-internal` repository-name SHAPE — a true match
+// for the pattern and a false one for the rule's purpose. Skipping the file keeps the rule intact
+// rather than loosening a pattern that exists to catch our own leaks; the rule still fires against
+// the self-test corpus, so this is not a category quietly emptied.
+//
+// It is skipped rather than gitignored because this script scans the WORKING TREE: the file exists
+// the moment anybody runs `npm install`, whether or not it is committed, so ignoring it in git
+// would leave the check failing for every contributor.
+const SKIP_FILE_NAMES = new Set(['package-lock.json']);
 // Extensions scanned without sniffing. A file with no extension, or a dotfile, is sniffed
 // instead — see `looksLikeText` — because LICENSE, .gitignore and .npmrc are all plain text that
 // this script used to walk straight past.
@@ -218,7 +229,7 @@ function looksLikeText(path, stats) {
 
 function walk(directory, files = []) {
   for (const entry of readdirSync(directory)) {
-    if (SKIP_DIRECTORIES.has(entry)) continue;
+    if (SKIP_DIRECTORIES.has(entry) || SKIP_FILE_NAMES.has(entry)) continue;
     const path = join(directory, entry);
     let stats;
     try {

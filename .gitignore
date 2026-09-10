@@ -5,5 +5,16 @@ coverage/
 .DS_Store
 *.log
 .expo/
-android/
-ios/
+
+# Root-anchored on purpose. This package ships no native code, so a top-level android/ or ios/ is
+# stray generated output — but `example/` is an Expo prebuild project whose native directories are
+# checked in, because they carry the config plugin's output, the launcher artwork and the signing
+# config.
+/android/
+/ios/
+
+# One negation, for the same reason the Kotlin sample keeps one: the example's debug keystore is
+# the well-known Android debug identity (alias `androiddebugkey`, password `android`), which Play
+# rejects on upload. Every other keystore stays out of the tree.
+*.keystore
+!example/android/app/debug.keystore

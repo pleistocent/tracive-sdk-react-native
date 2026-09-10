@@ -1,0 +1,42 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# ios/ and android/ are NOT ignored here: this example is prebuilt and its native projects are
+# checked in. See the note in the repository root .gitignore. Re-running `npx expo prebuild` will
+# overwrite the launcher artwork and the signing config comment; `git diff` afterwards, and put
+# them back.
