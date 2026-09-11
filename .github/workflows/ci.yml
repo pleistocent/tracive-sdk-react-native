@@ -19,6 +19,10 @@ on:
   # Manual only, so a run costs something only when someone asks for it. See the note above.
   workflow_dispatch:
 
+  # release.yml runs these same gates before it publishes anything. With automatic CI off, a
+  # release is otherwise cut from code nothing has checked.
+  workflow_call:
+
 permissions:
   contents: read
 

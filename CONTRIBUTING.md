@@ -226,3 +226,12 @@ hidden inside a percentage.
 First publish is a human action. A scoped package publishes as restricted by default, and
 `publishConfig.access` failing silently produces a private package — which is exactly the step that
 should not happen unattended.
+
+That is still true of the _first_ one, and for a reason no workflow can take over: the `@tracive`
+scope does not exist on npm yet, and creating an organisation is a manual action.
+
+Everything after it is a workflow dispatch — [docs/RELEASING.md](docs/RELEASING.md). The
+restricted-package failure is handled rather than trusted to a human: the publish passes
+`--access public` explicitly, and the step after it fetches the published version from the registry
+**anonymously**. A restricted package answers 404 to that request, which is the same 404 a partner
+would get, so the failure that used to be silent now fails the job.

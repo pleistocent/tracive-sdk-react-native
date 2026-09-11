@@ -500,6 +500,7 @@ over but that you must be able to see in your own telemetry.
 - [docs/proxy-contract.md](docs/proxy-contract.md) — the phase 2 gateway mode
 - [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — risks carried forward, stated plainly
 - [SECURITY.md](SECURITY.md) — the cryptography, including what is _not_ independently audited
+- [docs/RELEASING.md](docs/RELEASING.md) — cutting a release, and the npm setup it still needs
 - [CONTRIBUTING.md](CONTRIBUTING.md) — including the rules for what may not appear in this repo
 
 ## Requirements
