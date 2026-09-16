@@ -176,6 +176,33 @@ function parseJsonBody(body: string): Record<string, unknown> {
   }
 }
 
+/**
+ * The error to raise when a REFRESH is over for good, or null when it may be tried again.
+ *
+ * Two codes mean the same thing in two envelopes. The Tracive envelope says `grant_revoked`; the
+ * token endpoint answers in RFC 6749's shape instead, where `invalid_grant` covers all three
+ * terminal cases — the grant was revoked, the refresh token idled out, and reuse detection fired.
+ * Read only as "unknown", it left dead tokens on the device: every later check spent two round
+ * trips failing, and nothing ever told the host to send the user through authorize again.
+ *
+ * Scoped to the refresh path on purpose, rather than mapped globally in `traciveErrorFrom`.
+ * `invalid_grant` is terminal because of where it arrived, not because of what it says, and the
+ * code exchange — which has no stored credentials to discard — must keep treating it as an
+ * ordinary failure.
+ */
+function terminalRefreshFailure(error: unknown): TraciveError | null {
+  if (!(error instanceof TraciveError)) return null;
+  if (error.kind === 'grantRevoked') return error;
+  if (error.serverCode !== 'invalid_grant') return null;
+  return new TraciveError({
+    kind: 'grantRevoked',
+    message: error.message,
+    status: error.status,
+    info: error.info,
+    cause: error,
+  });
+}
+
 export class TraciveOAuth {
   static readonly traciveAppScheme = TRACIVE_APP_SCHEME;
   /**
@@ -1037,12 +1064,14 @@ export class TraciveOAuth {
     try {
       tokens = this.#decodeTokenResponse(response, refreshToken);
     } catch (error) {
-      // `grant_revoked` is terminal: the grant is gone, so retrying can only produce more of the
-      // same. Discard locally so the app asks for authorization instead of looping — and move the
-      // epoch with it, so a second round trip already out cannot restore what the server just
-      // said is finished.
-      if (error instanceof TraciveError && error.kind === 'grantRevoked') {
+      // A terminal answer means the grant is gone, so retrying can only produce more of the same.
+      // Discard locally so the app asks for authorization instead of looping — and move the epoch
+      // with it, so a second round trip already out cannot restore what the server just said is
+      // finished.
+      const terminal = terminalRefreshFailure(error);
+      if (terminal !== null) {
         await this.#discardCredentials();
+        throw terminal;
       }
       throw error;
     }
