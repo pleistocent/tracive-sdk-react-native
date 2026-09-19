@@ -64,7 +64,14 @@ through the plugin; see [`../SECURITY.md`](../SECURITY.md).
 
 Debug builds trust user-installed CAs (`android/app/src/main/res/xml/network_security_config.xml`,
 referenced from the debug manifests only), so an HTTPS proxy such as Proxyman can read and mock
+either environment's traffic once its CA is installed on the device.Debug builds trust user-installed CAs (`android/app/src/main/res/xml/network_security_config.xml`,
+referenced from the debug manifests only), so an HTTPS proxy such as Proxyman can read and mock
 either environment's traffic once its CA is installed on the device.
+
+With the device's HTTP proxy pointed at Proxyman, the debug build's connection to Metro
+(`10.0.2.2:8081`) goes through the proxy too and fails to load the bundle. Load it over
+`adb reverse tcp:8081 tcp:8081` from `localhost:8081` instead — the dev menu's "Change Bundle
+Location" — so it never reaches the proxy.
 
 ## No network in the demo, on purpose
 
