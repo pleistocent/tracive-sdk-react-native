@@ -7,14 +7,19 @@
   "scripts": {
     "sdk:build": "npm --prefix .. run build",
     "start": "npm run sdk:build && expo start",
-    "android": "npm run sdk:build && expo run:android",
-    "ios": "npm run sdk:build && expo run:ios",
+    "android": "npm run sdk:build && expo run:android --variant demoDebug",
+    "android:sandbox": "npm run sdk:build && expo run:android --variant sandboxDebug --app-id id.tracive.sdk.example.rn.sandbox",
+    "android:production": "npm run sdk:build && expo run:android --variant productionDebug --app-id id.tracive.sdk.example.rn.production",
+    "ios": "npm run sdk:build && expo run:ios --scheme demo --configuration Debug-demo",
+    "ios:sandbox": "npm run sdk:build && expo run:ios --scheme sandbox --configuration Debug-sandbox",
+    "ios:production": "npm run sdk:build && expo run:ios --scheme production --configuration Debug-production",
     "prebuild": "npm run sdk:build && expo prebuild",
     "doctor": "node ../bin/tracive-doctor.js --redirect-uri https://example.tracive.id/oauth/callback"
   },
   "dependencies": {
     "@tracive/sdk-react-native": "file:..",
     "expo": "~55.0.31",
+    "expo-application": "~55.0.19",
     "expo-crypto": "~55.0.0",
     "expo-secure-store": "~55.0.0",
     "expo-sqlite": "~55.0.0",

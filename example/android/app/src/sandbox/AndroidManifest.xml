@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <activity android:name=".MainActivity">
+      <!--
+        The sandbox flavor's OAuth redirect, merged into the main activity. It has to match
+        src/flavor.ts. A private-use scheme only because this example controls no domain; the Expo
+        config plugin writes https App Links only, so this file is hand-kept and `expo prebuild`
+        does not know about it.
+
+        TODO(partner): an https App Link on a host you own, registered on your sandbox client id.
+      -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="tracive-rn-sandbox" android:host="oauth"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

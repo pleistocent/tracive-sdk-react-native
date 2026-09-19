@@ -1,0 +1,11 @@
+// The demo flavor (`npm run ios`). src/flavor.ts says what each flavor is for, why each installs as
+// its own app, and why the demo keeps the original bundle id. Debug-demo and Release-demo include
+// this through their wrapper beside it.
+//
+// No `://` in any value: xcconfig reads `//` as the start of a comment wherever it appears.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.sdk.example.rn
+TRACIVE_DISPLAY_NAME = RN Demo
+
+// Unused: the demo never authorizes, and its redirect is the https App Link in app.json. Set only
+// because Info.plist declares a redirect scheme for every flavor.
+TRACIVE_REDIRECT_SCHEME = tracive-rn-demo

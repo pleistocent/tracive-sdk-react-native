@@ -1,0 +1,6 @@
+// The sandbox flavor (`npm run ios:sandbox`). See demo.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.sdk.example.rn.sandbox
+TRACIVE_DISPLAY_NAME = RN Sandbox
+
+// TODO(partner): your own sandbox scheme — keep src/flavor.ts in step.
+TRACIVE_REDIRECT_SCHEME = tracive-rn-sandbox

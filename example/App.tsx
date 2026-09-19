@@ -14,13 +14,13 @@
  *   * The two shared fixtures, executed on Hermes. See `src/conformance.ts` — that panel is the
  *     one check in the whole design that can fail for the reason the fixtures exist.
  *
- * NO NETWORK, BY DEFAULT AND ON PURPOSE. Every call is answered in-process by `DemoBackend`,
- * injected as the client's `transport`, so the app runs on a first clone with no credentials and
- * nothing to reach, and behaves identically every time it runs in CI. `openSession` below marks
- * the one line to delete to point it at a real environment instead.
+ * THREE FLAVORS (src/flavor.ts). `demo`, the default, answers every call in-process from
+ * `DemoBackend`, injected as the client's `transport`, so the app runs on a first clone with no
+ * credentials and nothing to reach, and behaves identically every time it runs in CI. `sandbox`
+ * and `production` are the real integration: `fetch` against that environment, and the OAuth round
+ * trip through the Tracive app. `openSession` below is the whole difference between them.
  *
- * Everything you must supply, and every demo shortcut to take back out, is marked `TODO(partner)`:
- * `grep -rn "TODO(partner)" example`.
+ * Everything you must supply is marked `TODO(partner)`: `grep -rn "TODO(partner)" example`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -38,10 +38,12 @@ import {
   isTraciveQueryError,
   normalizePhoneNumber,
   TraciveClient,
+  TraciveEnvironment,
   TraciveMode,
   TraciveOAuth,
   TraciveQuery,
   TraciveScopes,
+  type AuthResult,
   type CheckResult,
   type OAuthConfiguration,
   type RiskTier,
@@ -55,14 +57,18 @@ import {
 
 import { DemoBackend } from './src/demoBackend';
 import { runConformance, type ConformanceReport } from './src/conformance';
+import { currentFlavor, type Flavor } from './src/flavor';
 
-// TODO(partner): your own values. `redirectUri` must be an https App Link / Universal Link on a
-// host you own — a custom scheme is claimed first-come on both platforms, so any other app could
-// receive the authorization code. The Expo config plugin in app.json writes the manifest,
-// Info.plist and entitlements entries for exactly this URL; `npm run doctor` checks the result.
+const FLAVOR: Flavor = currentFlavor();
+
+// TODO(partner): your own values — the client id and redirect per environment are in
+// src/flavor.ts. A redirect must be an https App Link / Universal Link on a host you own: a custom
+// scheme is claimed first-come on both platforms, so any other app could receive the authorization
+// code. The Expo config plugin in app.json writes the manifest, Info.plist and entitlements entries
+// for an https redirect; `npm run doctor` checks the result.
 const OAUTH_CONFIG: OAuthConfiguration = {
-  clientId: 'demo-client',
-  redirectUri: 'https://example.tracive.id/oauth/callback',
+  clientId: FLAVOR.clientId,
+  redirectUri: FLAVOR.redirectUri,
   partnerUserId: 'partner-user-1',
   scopes: [TraciveScopes.scammerCheck],
 };
@@ -72,7 +78,8 @@ type Country = (typeof COUNTRIES)[number];
 
 interface Session {
   readonly client: TraciveClient;
-  readonly backend: DemoBackend;
+  /** Only the demo has one; the live flavors talk to the real API. */
+  readonly backend?: DemoBackend;
 }
 
 const TIER_COLOR: Record<RiskTier, string> = {
@@ -82,13 +89,34 @@ const TIER_COLOR: Record<RiskTier, string> = {
   NONE: '#067647',
 };
 
-async function openSession(): Promise<Session> {
-  const backend = new DemoBackend();
-
+async function openSession(flavor: Flavor): Promise<Session> {
   // Real `expo-sqlite` rows, encrypted with a key held in the real keychain / Android Keystore.
   // Never throws: a cache that cannot open degrades to a cold cache with `lastStoreError` set.
   const cache = await openExpoCheckCache({ random: expoRandom });
   const tokenStore = expoSecureTokenStore();
+
+  const environment = flavor.environment;
+  if (environment !== undefined) {
+    // The real integration. The environment goes to the OAuth flow as well as the client: the flow
+    // owns the authorize URL and the token endpoint, and on its own it would default to production.
+    const oauth = new TraciveOAuth({
+      mode: OAUTH_CONFIG,
+      environment,
+      tokenStore,
+      pendingStore: expoSecurePendingAuthorizationStore(),
+      random: expoRandom,
+    });
+    const client = new TraciveClient({
+      mode: TraciveMode.oauth(OAUTH_CONFIG),
+      environment,
+      cache,
+      oauth,
+      random: expoRandom,
+    });
+    return { client };
+  }
+
+  const backend = new DemoBackend();
 
   const oauth = new TraciveOAuth({
     mode: OAUTH_CONFIG,
@@ -100,10 +128,11 @@ async function openSession(): Promise<Session> {
     random: expoRandom,
   });
 
-  // TODO(partner): DELETE THIS. A real app calls `client.authorize()` and the grant arrives back
-  // through the App Link. Consent happens in the Tracive app on the same device, which an example
-  // cannot assume is installed, so a grant is planted directly in the same secure store the real
-  // flow writes to — which is what lets everything downstream be the real code path.
+  // Demo only. A real app calls `client.authorize()` and the grant arrives back through the
+  // redirect, which is what the live flavors do. Consent happens in the Tracive app on the same
+  // device, which the demo cannot assume is installed, so a grant is planted directly in the same
+  // secure store the real flow writes to — which is what lets everything downstream be the real
+  // code path.
   await tokenStore.write({
     accessToken: 'demo-access-token-0',
     refreshToken: 'demo-refresh-token-0',
@@ -116,11 +145,9 @@ async function openSession(): Promise<Session> {
     mode: TraciveMode.oauth(OAUTH_CONFIG),
     cache,
     oauth,
-    // TODO(partner): DELETE THIS TOO, and pass `environment` instead — omit `transport` and the
-    // SDK uses `fetch` against the environment's own base URL. `TraciveEnvironment.sandbox` and
-    // `TraciveEnvironment.custom(baseUrl)` are the two you would reach for. This one line is the
-    // whole difference between the offline example and a real integration; injecting a transport
-    // stays a supported seam either way, and it is how you would test your own screens.
+    // The one line that keeps the demo offline; the live flavors pass `environment` instead and
+    // the SDK uses `fetch` against its base URL. Injecting a transport stays a supported seam, and
+    // it is how you would test your own screens.
     transport: backend,
     random: expoRandom,
   });
@@ -138,13 +165,15 @@ export default function App() {
   const [error, setError] = useState<string | undefined>();
   const [calls, setCalls] = useState(0);
   const [rows, setRows] = useState(0);
+  const [authorized, setAuthorized] = useState(false);
+  const [notice, setNotice] = useState<string | undefined>();
   const conformance = useRef<ConformanceReport | undefined>(undefined);
   if (conformance.current === undefined) conformance.current = runConformance();
   const report = conformance.current;
 
   useEffect(() => {
     let live = true;
-    openSession().then(
+    openSession(FLAVOR).then(
       (opened) => {
         if (live) setSession(opened);
       },
@@ -175,8 +204,47 @@ export default function App() {
     }
   }, [country, input]);
 
+  // The live flavors' OAuth wiring. Started once per session: the listener also picks up the link
+  // that cold-started the app, which is how a flow survives the OS killing this process while the
+  // user was in the Tracive app.
+  useEffect(() => {
+    if (session === undefined || FLAVOR.environment === undefined) return undefined;
+    const { client } = session;
+    const stopResults = client.onAuthResult((result) => {
+      setAuthorized(result.type === 'authorized');
+      setNotice(describeAuthResult(result));
+    });
+    const stopLinks = client.startLinkListener();
+    void client.isAuthorized().then(setAuthorized);
+    return () => {
+      stopLinks();
+      stopResults();
+    };
+  }, [session]);
+
+  const authorize = useCallback(async () => {
+    if (session === undefined) return;
+    setNotice(undefined);
+    const start = await session.client.authorize();
+    // null: the consent screen is open, and the outcome arrives at onAuthResult above.
+    setNotice(
+      start === null
+        ? 'Consent screen opened. Finish it in the Tracive app.'
+        : describeAuthResult(start),
+    );
+  }, [session]);
+
+  const signOut = useCallback(async () => {
+    if (session === undefined) return;
+    await session.client.signOut();
+    setAuthorized(false);
+    setResult(undefined);
+    setNotice('Signed out. The grant and the cached verdicts are gone.');
+    setRows(await session.client.cache.count());
+  }, [session]);
+
   const refreshCounters = useCallback(async (active: Session) => {
-    setCalls(active.backend.callCount);
+    setCalls(active.backend?.callCount ?? 0);
     setRows(await active.client.cache.count());
   }, []);
 
@@ -210,7 +278,7 @@ export default function App() {
   }, [refreshCounters, session]);
 
   const expireGrant = useCallback(() => {
-    if (session === undefined) return;
+    if (session?.backend === undefined) return;
     session.backend.expireNextAccessToken = true;
     setError(undefined);
   }, [session]);
@@ -228,10 +296,39 @@ export default function App() {
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Tracive RN</Text>
-        <Text style={styles.subtitle}>
-          SDK sample. Every response comes from an in-process fake injected as the client's
-          transport, so this runs with no credentials and no network.
-        </Text>
+        {FLAVOR.environment === undefined ? (
+          <Text style={styles.subtitle}>
+            SDK sample, demo flavor. Every response comes from an in-process fake injected as the
+            client's transport, so this runs with no credentials and no network. The sandbox and
+            production flavors talk to the real API.
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.environment}>
+              {FLAVOR.name} · {TraciveEnvironment.baseUrl(FLAVOR.environment)}
+            </Text>
+            <Text style={styles.subtitle}>
+              SDK sample. Every check is a real call to this environment.
+            </Text>
+            <View style={styles.row}>
+              <Pressable
+                onPress={authorize}
+                disabled={session === undefined || authorized}
+                style={[styles.button, (session === undefined || authorized) && styles.buttonOff]}
+              >
+                <Text style={styles.buttonText}>{authorized ? 'Authorized' : 'Authorize'}</Text>
+              </Pressable>
+              <Pressable
+                onPress={signOut}
+                disabled={session === undefined || !authorized}
+                style={styles.buttonAlt}
+              >
+                <Text style={styles.buttonAltText}>Sign out</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+        {notice !== undefined ? <Text style={styles.hint}>{notice}</Text> : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>1 · An identifier, as a person would write it</Text>
@@ -281,8 +378,8 @@ export default function App() {
           </Pressable>
         </View>
         <Text style={styles.hint}>
-          Press Check twice with the same number: the second answer is served from the cache, and
-          the call counter below does not move.
+          Press Check twice with the same number: the second answer is served from the cache
+          {session?.backend !== undefined ? ', and the call counter below does not move.' : '.'}
         </Text>
 
         {busy ? <ActivityIndicator style={styles.spinner} /> : null}
@@ -291,35 +388,55 @@ export default function App() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>3 · Provenance</Text>
-          <Fact
-            label="Calls that reached the backend"
-            value={String(calls)}
-            note="A cache hit is not a call."
-          />
+          {session?.backend !== undefined ? (
+            <Fact
+              label="Calls that reached the backend"
+              value={String(calls)}
+              note="A cache hit is not a call."
+            />
+          ) : null}
           <Fact label="Rows in the encrypted SQLite cache" value={String(rows)} />
-          <Fact
-            label="Last Idempotency-Key"
-            value={session?.backend.lastIdempotencyKey ?? '—'}
-            note="Sent on every check, whether or not you supply one."
-          />
-          <Fact
-            label="Access tokens issued"
-            value={String(session?.backend.tokenSerial ?? 0)}
-            note="Rises when a 401 forces one refresh and a replay."
-          />
-          <Pressable
-            onPress={expireGrant}
-            disabled={session === undefined}
-            style={styles.buttonAlt}
-          >
-            <Text style={styles.buttonAltText}>Expire the grant, then check</Text>
-          </Pressable>
+          {session?.backend !== undefined ? (
+            <>
+              <Fact
+                label="Last Idempotency-Key"
+                value={session.backend.lastIdempotencyKey ?? '—'}
+                note="Sent on every check, whether or not you supply one."
+              />
+              <Fact
+                label="Access tokens issued"
+                value={String(session.backend.tokenSerial)}
+                note="Rises when a 401 forces one refresh and a replay."
+              />
+              <Pressable onPress={expireGrant} style={styles.buttonAlt}>
+                <Text style={styles.buttonAltText}>Expire the grant, then check</Text>
+              </Pressable>
+            </>
+          ) : null}
         </View>
 
         <Conformance report={report} />
       </ScrollView>
     </View>
   );
+}
+
+function describeAuthResult(result: AuthResult): string {
+  switch (result.type) {
+    case 'authorized':
+      return `Authorized. Scopes granted: ${result.grantedScopes.join(', ')}`;
+    // Only reachable for a confidential client; this example is public.
+    // TODO(partner): a confidential client forwards the code and verifier over TLS to its own
+    // backend, which completes the exchange.
+    case 'codeReceived':
+      return 'Authorization code received. Forward it to your backend.';
+    case 'denied':
+      return 'You declined the request.';
+    case 'appNotInstalled':
+      return 'Install the Tracive app first — the install page has been opened.';
+    case 'failed':
+      return `${result.error.kind}: ${result.error.message}`;
+  }
 }
 
 function Verdict({ result }: { result: CheckResult }) {
@@ -409,6 +526,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingTop: 64, paddingBottom: 48, gap: 12 },
   title: { fontSize: 28, fontWeight: '700', color: '#101828' },
   subtitle: { fontSize: 13, color: '#475467', lineHeight: 18 },
+  environment: { fontSize: 13, fontWeight: '700', color: '#1F6FEB' },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,

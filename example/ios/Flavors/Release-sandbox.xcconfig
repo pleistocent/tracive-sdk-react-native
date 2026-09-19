@@ -1,0 +1,4 @@
+// The target's base configuration for Release-sandbox. CocoaPods owns the first file and regenerates it on
+// `pod install`; the Podfile maps this configuration to :release.
+#include? "../Pods/Target Support Files/Pods-TraciveRN/Pods-TraciveRN.release-sandbox.xcconfig"
+#include "sandbox.xcconfig"

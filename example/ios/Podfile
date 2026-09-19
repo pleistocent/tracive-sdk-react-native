@@ -20,6 +20,18 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
+# One Debug and one Release per flavor (src/flavor.ts). Every configuration has to be listed:
+# CocoaPods builds an unlisted one as release, and the prebuilt React Native and Hermes pods pick
+# their debug or release binaries from the DEBUG=1 that only a :debug mapping sets.
+project 'TraciveRN', {
+  'Debug-demo' => :debug,
+  'Release-demo' => :release,
+  'Debug-sandbox' => :debug,
+  'Release-sandbox' => :release,
+  'Debug-production' => :debug,
+  'Release-production' => :release,
+}
+
 target 'TraciveRN' do
   use_expo_modules!
 

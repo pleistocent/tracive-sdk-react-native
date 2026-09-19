@@ -1,0 +1,4 @@
+// The target's base configuration for Debug-production. CocoaPods owns the first file and regenerates it on
+// `pod install`; the Podfile maps this configuration to :debug.
+#include? "../Pods/Target Support Files/Pods-TraciveRN/Pods-TraciveRN.debug-production.xcconfig"
+#include "production.xcconfig"

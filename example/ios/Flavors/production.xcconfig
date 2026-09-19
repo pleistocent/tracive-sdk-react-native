@@ -1,0 +1,6 @@
+// The production flavor (`npm run ios:production`). See demo.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.sdk.example.rn.production
+TRACIVE_DISPLAY_NAME = Tracive RN
+
+// TODO(partner): your own production scheme — keep src/flavor.ts in step.
+TRACIVE_REDIRECT_SCHEME = tracive-rn

@@ -1,0 +1,4 @@
+// The target's base configuration for Debug-demo. CocoaPods owns the first file and regenerates it on
+// `pod install`; the Podfile maps this configuration to :debug.
+#include? "../Pods/Target Support Files/Pods-TraciveRN/Pods-TraciveRN.debug-demo.xcconfig"
+#include "demo.xcconfig"

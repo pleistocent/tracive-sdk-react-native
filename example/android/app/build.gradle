@@ -32,7 +32,10 @@ react {
     //   The list of variants to that are debuggable. For those we're going to
     //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
     //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
-    // debuggableVariants = ["liteDebug", "prodDebug"]
+    //
+    //   This example has flavors, so every flavor's debug and debugOptimized variant is listed.
+    //   Leave one out and it builds cleanly, embeds a bundle and never talks to Metro.
+    debuggableVariants = ["demo", "sandbox", "production"].collectMany { [it + "Debug", it + "DebugOptimized"] }
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
@@ -96,6 +99,25 @@ android {
         versionName "0.1.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+    }
+    // One flavor per way of running the example; src/flavor.ts says why each installs as its own
+    // app, and why the demo keeps the original id. Each live flavor's redirect scheme is in its own
+    // src/<flavor>/AndroidManifest.xml, and its label in src/<flavor>/res. The debug keystore
+    // below signs all three.
+    flavorDimensions "environment"
+    productFlavors {
+        demo {
+            dimension "environment"
+            isDefault true
+        }
+        sandbox {
+            dimension "environment"
+            applicationIdSuffix ".sandbox"
+        }
+        production {
+            dimension "environment"
+            applicationIdSuffix ".production"
+        }
     }
     // Checked in rather than left to the debug keystore AGP generates per machine in
     // `~/.android/debug.keystore` (`%USERPROFILE%\.android` on Windows). That one differs for every
