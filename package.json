@@ -1,7 +1,7 @@
 {
   "name": "@tracive/sdk-react-native",
   "version": "0.1.0",
-  "description": "Check a phone number, e-mail, bank account, crypto address or social handle against Tracive's scam reports. Phase 1 is OAuth-only and the Tracive API is not live yet.",
+  "description": "Check a phone number, e-mail, bank account, crypto address or social handle against Tracive's scam reports. Phase 1 is OAuth-only.",
   "license": "Apache-2.0",
   "homepage": "https://tracive.id",
   "repository": {

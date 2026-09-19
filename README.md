@@ -15,10 +15,11 @@ Apache-2.0.
 Four things are true about this package, and finding out about any of them late reads as "the SDK
 is broken":
 
-1. **The Tracive API is not live yet.** This package is the client half of a contract. It is
-   complete, tested and installable, and there is no production endpoint to point it at today.
-   Everything below describes the shape of the integration, not a service you can call this
-   afternoon.
+1. **Sandbox and production are separate registrations.** Both environments answer —
+   `https://api-sandbox.tracive.id/v1` and `https://api.tracive.id/v1`, with consent in the matching
+   build of the Tracive app — and each needs a client id issued for it, with your redirect registered
+   on that client. A sandbox client id is unknown to production. Build against
+   `TraciveEnvironment.sandbox`; `production` is the default.
 
 2. **There is no API key. In either mode, anywhere in the surface.** Authorization is OAuth 2.0
    with PKCE (S256 only), performed by the Tracive app already installed on the user's device. If
@@ -27,8 +28,8 @@ is broken":
 
 3. **Authorization cannot complete in Expo Go.** Two independent reasons: `LSApplicationQueriesSchemes`
    cannot be tested in Expo Go, so the iOS app-presence probe answers `false` regardless of the
-   truth; and Expo Go's redirect URI is an `exp://` URL, while the authorization server matches the
-   registered HTTPS redirect exactly and rejects custom schemes. **A development build or a bare
+   truth; and Expo Go's redirect URI is an `exp://` URL that changes with the dev server's address,
+   while the authorization server matches the registered redirect exactly. **A development build or a bare
    React Native app is required for the authorization round-trip.** Query building, the models, the
    record-key guard and the cache all work fine in Expo Go for prototyping.
 
