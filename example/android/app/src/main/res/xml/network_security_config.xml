@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <!--
+    Referenced from the debug and debugOptimized manifests only; a release build does not use it.
+
+    A debug build needs two things, and once a config exists it has to spell out both, because the
+    manifest's usesCleartextTraffic is then ignored:
+    - cleartext, for Metro on 10.0.2.2:8081;
+    - user-installed CAs, so an HTTPS proxy (Proxyman, Charles) can read and mock the traffic. From
+      Android 7 no app trusts them by default, debuggable or not.
+  -->
+  <base-config cleartextTrafficPermitted="true">
+    <trust-anchors>
+      <certificates src="system" />
+      <certificates src="user" />
+    </trust-anchors>
+  </base-config>
+</network-security-config>
