@@ -98,7 +98,7 @@ const TEXT_EXTENSIONS = new Set([
 const ALLOWED_PLEISTOCENT_PATTERNS = [
   // The copyright holder in a licence header. Legitimate, and the reason widening this scan to
   // extension-less files surfaced LICENSE on the first run.
-  /Copyright \d{4} Pleistocent(?![A-Za-z0-9._-])/g,
+  /Copyright \d{4} (?:PT )?Pleistocent(?:[A-Za-z ]*)?(?![A-Za-z0-9._-])/g,
   /com\.pleistocent\.tracive(?:\.[A-Za-z0-9_]+)*(?![A-Za-z0-9._-])/g,
   /github\.com\/pleistocent\/tracive-sdk-react-native(\.git)?(?![A-Za-z0-9._-])/g,
   /pleistocent\/tracive-sdk-react-native(?![A-Za-z0-9._-])/g,
