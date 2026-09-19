@@ -21,9 +21,9 @@ export async function completed(pending: Promise<AuthResult | null>): Promise<Au
 }
 
 /**
- * No unit test in this repository opens a socket, touches a device or launches a browser. The
- * Tracive API is not live, so a test that contacted a real host could only ever be a test of
- * somebody else's DNS.
+ * No unit test in this repository opens a socket, touches a device or launches a browser. A test
+ * that contacted a real host would fail whenever that environment is down, and could not make the
+ * server answer a 402 or a 429 on demand.
  */
 export class FakeTransport implements HttpTransport {
   readonly requests: HttpRequest[] = [];

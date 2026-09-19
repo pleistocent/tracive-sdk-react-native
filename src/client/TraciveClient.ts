@@ -492,8 +492,9 @@ export class TraciveClient {
       // The SDK re-sends this exact POST after a 401 refresh (see `#execute`). With no key the
       // two attempts are indistinguishable to the server, so anything billed before or during
       // authorisation is billed twice with no way for the caller to detect it. The old reasoning
-      // for allowing that was "a 401 is rejected before billing" — an assumption about a server
-      // that does not exist yet, and the one premise this SDK otherwise refuses to make anywhere.
+      // for allowing that was "a 401 is rejected before billing" — an assumption about the server's
+      // ordering that nothing on the client can verify, and the one premise this SDK otherwise
+      // refuses to make anywhere.
       // Generating a key removes the need to assume anything. The prefix keeps an SDK-invented key
       // distinguishable from a partner's own in a server-side log, which is what a disputed charge
       // gets reconciled against.

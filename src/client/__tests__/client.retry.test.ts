@@ -85,8 +85,8 @@ describe('a check without an idempotency key', () => {
  * The SDK re-sends the identical POST after a 401 refresh. Without a key on it the two attempts
  * are indistinguishable to the server, so anything billed before or during authorisation is billed
  * twice and the caller has no way to detect it. The old reasoning — "a 401 is rejected before
- * billing" — is an assumption about a server that does not exist yet; generating a key means no
- * assumption is needed.
+ * billing" — is an assumption about the server's ordering that nothing on the client can verify;
+ * generating a key means no assumption is needed.
  */
 describe('the key the SDK generates when the caller supplies none', () => {
   const KEY_SHAPE = /^sdk-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

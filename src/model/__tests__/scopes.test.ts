@@ -9,10 +9,10 @@ import { TraciveScopes, type TraciveScope } from '../scopes';
  * `expect(TraciveScopes.scammerCheck).toBe(TraciveScopes.scammerCheck)` would pass through any
  * rename, so the contract these constants exist to pin would be redefinable in silence.
  *
- * The contract is shared with the Kotlin, Swift and Flutter SDKs and enforced by an authorization
- * server that is not live yet. A wrong string here cannot be caught anywhere else: the server
- * rejects the whole consent request rather than granting a narrower grant, so the symptom is an
- * integration that cannot authorize at all, and nothing today can produce that symptom on demand.
+ * The contract is shared with the Kotlin, Swift and Flutter SDKs and enforced by the authorization
+ * server. A wrong string here cannot be caught anywhere else: the server rejects the whole consent
+ * request rather than granting a narrower grant, so the symptom is an integration that cannot
+ * authorize at all, and no test here can ask the server to show it.
  */
 describe('the OAuth scope constants', () => {
   it('carries the exact wire strings the authorization server accepts', () => {
