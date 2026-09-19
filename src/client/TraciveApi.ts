@@ -4,8 +4,8 @@ import { TraciveEnvironment } from '../model/TraciveEnvironment';
  * Every path the SDK will ever request, in one place, so that a change to the API surface is a
  * one-file diff and an audit of what this package can reach is a one-file read.
  *
- * The Tracive API is not live yet. These paths are the agreed shape, not an endpoint anybody can
- * call today, and no test in this repository contacts a real host.
+ * These paths are the agreed shape of the contract, and no test in this repository contacts a real
+ * host.
  */
 export const TRACIVE_API_PATHS = {
   scammerChecks: '/scammer-checks',

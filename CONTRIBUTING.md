@@ -210,8 +210,8 @@ it — restricting the check back to production alone left all 25 doctor tests g
 No unit test opens a socket, touches a device or launches a browser. Every capability that reaches
 the outside world is a port; inject a fake. `src/__tests__/support/` has the ones already written.
 
-The Tracive API is not live, so a test that contacted a real host could only ever be testing
-somebody else's DNS.
+A test that contacted a real host would fail whenever that environment is down or mid-deploy, and
+would be testing somebody else's DNS as much as this code.
 
 Coverage floors, enforced in `jest.config.js`: 90% statements on `src/query/**` and `src/cache/**`,
 80% overall. The adapter subpaths are excluded from collection because they cannot be loaded without

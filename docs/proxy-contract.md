@@ -1,8 +1,8 @@
 # Proxy mode (phase 2)
 
 > **Not available yet.** Proxy mode is present in the public surface so that enabling it later is
-> not a breaking change. The Tracive API is not live, and the gateway contract below has not been
-> exercised against a real deployment.
+> not a breaking change. The gateway contract below has not been exercised against a real
+> deployment.
 
 In phase 1 the SDK talks to the Tracive API directly, holding a user's OAuth grant. In phase 2 a
 partner may instead route checks through their own backend:

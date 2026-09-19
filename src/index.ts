@@ -4,7 +4,7 @@
  * Anything not re-exported here is internal and may change without a major version.
  *
  * Three things to know before reading further:
- * - The Tracive API is not live yet. This package is the client half of a contract.
+ * - Sandbox and production are separate registrations, each needing its own client id.
  * - There is no API key anywhere in this surface, in either mode. Authorization is OAuth 2.0
  *   with PKCE, performed by the Tracive app on the same device.
  * - Every check is billed, including one that finds nothing. That is why the query builders

@@ -6,8 +6,8 @@ linked to [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
 Two facts frame everything below, and both are load-bearing rather than decorative:
 
-- **The Tracive API is not live yet.** Endpoint paths, request fields and response fields are the
-  agreed shape of a contract, not an observed one. See item 9 of
+- **The wire shape is the agreed contract, not yet reconciled against the live API.** Endpoint
+  paths, request fields and response fields follow the contract. See item 9 of
   [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 - **Every check is billed, including one that finds nothing.** That is why the query builders reject
   locally, why the cache exists, why overlapping checks are collapsed, and why a check is never

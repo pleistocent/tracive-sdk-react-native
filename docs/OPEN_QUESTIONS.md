@@ -115,7 +115,8 @@ change, not a one-repository change.
 
 ## 9. Wire field names for the check payload are the agreed shape, not an observed one
 
-The Tracive API is not live. Request and response field names follow the fixture's own
+The Tracive API is live in both environments, but this repository has not yet reconciled its wire
+shape against real responses. Request and response field names follow the fixture's own
 `searchQueryIndex` spelling, and the endpoint paths sit in one file (`src/client/TraciveApi.ts`) so
 that reconciling them against the real service is a one-file diff. No test in this repository
 contacts a real host, and none should.
