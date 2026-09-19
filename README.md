@@ -69,24 +69,44 @@ SDK **throws rather than falling back to `Math.random()`**: a deterministic PRNG
 predictable PKCE verifiers and predictable cache nonces while every test still passes, which is
 exactly the kind of failure that stays invisible until it matters.
 
-Satisfy it either with a polyfill:
+On Expo, install `expo-crypto` and pass the adapter this package builds on it, `expoRandom`, as
+`random` to each of the three things that draw randomness — the same wiring as
+[`example/App.tsx`](example/App.tsx):
 
 ```sh
-# Expo
-npx expo install expo-standard-web-crypto   # or expo-crypto
-
-# Bare React Native
-npm i react-native-get-random-values
+npx expo install expo-crypto
 ```
 
-and, for bare React Native, at the very top of your entry file:
+```ts
+import { expoRandom, openExpoCheckCache } from '@tracive/sdk-react-native/expo';
+
+const cache = await openExpoCheckCache({ random: expoRandom });
+const oauth = new TraciveOAuth({ mode: config, /* … */ random: expoRandom });
+const client = new TraciveClient({
+  mode: TraciveMode.oauth(config),
+  cache,
+  oauth,
+  random: expoRandom,
+});
+```
+
+Installing a package is not enough on its own. By default the SDK reads `globalThis.crypto`, and
+neither `expo-crypto` nor `expo-standard-web-crypto` defines it on import — the second only does once
+you call its `polyfillWebCrypto()`.
+
+On bare React Native, install the polyfill and import it at the very top of your entry file; that
+one does define the global:
+
+```sh
+npm i react-native-get-random-values
+```
 
 ```ts
 import 'react-native-get-random-values';
 ```
 
-or by passing your own implementation of the `TraciveRandom` port, which `TraciveClient` and
-`TraciveOAuth` both accept as `random`:
+Any other runtime can pass its own implementation of the `TraciveRandom` port, which
+`TraciveClient` and `TraciveOAuth` both accept as `random`:
 
 ```ts
 const client = new TraciveClient({ mode, random: myRandom });
@@ -140,6 +160,7 @@ The secure store you already installed for the cache above is all either one nee
 ```ts
 import { TraciveClient, TraciveMode, TraciveOAuth } from '@tracive/sdk-react-native';
 import {
+  expoRandom,
   expoSecurePendingAuthorizationStore,
   expoSecureTokenStore,
 } from '@tracive/sdk-react-native/expo';
@@ -149,10 +170,12 @@ import {
 const client = new TraciveClient({
   mode: TraciveMode.oauth(config),
   cache,
+  random: expoRandom,
   oauth: new TraciveOAuth({
     mode: config,
     tokenStore: expoSecureTokenStore(),
     pendingStore: expoSecurePendingAuthorizationStore(),
+    random: expoRandom,
   }),
 });
 ```

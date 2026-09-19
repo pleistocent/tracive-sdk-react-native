@@ -177,11 +177,13 @@ release, so they land in your own logging rather than nowhere.
 
 ### A CSPRNG, on every path
 
-React Native ships no WebCrypto. Install one satisfier — `expo-standard-web-crypto` or `expo-crypto`
-on Expo, `react-native-get-random-values` on bare React Native (imported at the very top of your
-entry file). Without it, anything needing randomness throws
-`TraciveConfigurationError('csprng_unavailable')` with a message naming both options. It will not
-fall back to `Math.random()`.
+React Native ships no WebCrypto. On Expo, install `expo-crypto` and pass the package's `expoRandom`
+as `random` to `openExpoCheckCache`, `TraciveOAuth` and `TraciveClient`, as `example/App.tsx` does;
+installing `expo-crypto` or `expo-standard-web-crypto` alone does not define `globalThis.crypto`,
+which is where the SDK looks by default. On bare React Native, install
+`react-native-get-random-values` and import it at the very top of your entry file. Without either,
+anything needing randomness throws `TraciveConfigurationError('csprng_unavailable')` with a message
+naming both options. It will not fall back to `Math.random()`.
 
 **This is no longer only an authorization requirement.** Every `checkScammer` call carries an
 `Idempotency-Key`, and the SDK generates one when you supply none — from the same seam. So a
