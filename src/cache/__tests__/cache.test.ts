@@ -61,22 +61,23 @@ describe('CachePolicy TTLs', () => {
     expect(CachePolicy.ttlSecondsFor(CachePolicy.default, tier)).toBe(seconds);
   });
 
-  it('lets a server TTL override replace the per-tier default', () => {
-    const withOverride = result({ riskTier: 'HIGH', cacheTtlSeconds: 60 });
-    expect(CachePolicy.effectiveTtlSeconds(CachePolicy.default, withOverride)).toBe(60);
+  it('ignores a cacheTtlSeconds still present on the result', () => {
+    // The backend stopped sending this field (pleistocent-firebase@88fd6f9) and the SDK no longer
+    // models it. A proxy that still sends it reaches the mapper as an unknown key, so the tier
+    // default has to win. Cast, because the property is gone from the type.
+    const withRetiredField = {
+      ...result({ riskTier: 'HIGH' }),
+      cacheTtlSeconds: 60,
+    } as CheckResult;
+    expect(CachePolicy.effectiveTtlSeconds(CachePolicy.default, withRetiredField)).toBe(2_592_000);
   });
 
-  it('ignores the override when honorsServerTtlOverride is off', () => {
-    const policy = CachePolicy.create({ honorsServerTtlOverride: false });
-    expect(CachePolicy.effectiveTtlSeconds(policy, result({ cacheTtlSeconds: 60 }))).toBe(
-      2_592_000,
+  it('clamps a negative configured TTL to zero rather than making the entry eternally fresh', () => {
+    const policy = CachePolicy.create({ highTtlSeconds: -1 });
+    expect(CachePolicy.effectiveTtlSeconds(policy, result({ riskTier: 'HIGH' }))).toBe(0);
+    expect(CachePolicy.isFresh(policy, result({ riskTier: 'HIGH' }), 1_700_000_000_000)).toBe(
+      false,
     );
-  });
-
-  it('clamps a negative TTL to zero rather than making the entry eternally fresh', () => {
-    const withNegative = result({ cacheTtlSeconds: -1 });
-    expect(CachePolicy.effectiveTtlSeconds(CachePolicy.default, withNegative)).toBe(0);
-    expect(CachePolicy.isFresh(CachePolicy.default, withNegative, 1_700_000_000_000)).toBe(false);
   });
 });
 
@@ -99,18 +100,27 @@ describe('InMemoryCheckCache', () => {
     expect(await cache.read(KEY)).toBeUndefined();
   });
 
-  it('does not store a result whose effective TTL is zero', async () => {
-    const cache = new InMemoryCheckCache({ clock: new FakeClock() });
-    await cache.write(result({ cacheTtlSeconds: 0 }), KEY);
+  it('does not store a result whose tier TTL is zero', async () => {
+    const cache = new InMemoryCheckCache({
+      policy: CachePolicy.create({ highTtlSeconds: 0 }),
+      clock: new FakeClock(),
+    });
+    await cache.write(result({ riskTier: 'HIGH' }), KEY);
     expect(await cache.count()).toBe(0);
   });
 
-  it('lets a zero TTL retract the entry already held for that key', async () => {
-    const cache = new InMemoryCheckCache({ clock: new FakeClock() });
+  it('lets a zero tier TTL drop the entry already held for that key', async () => {
+    // The device holds a HIGH verdict; the identifier is re-checked and comes back NONE, a tier
+    // this host does not cache. Declining to store the new answer is not enough — the old HIGH
+    // would keep being served for the rest of its thirty days.
+    const cache = new InMemoryCheckCache({
+      policy: CachePolicy.create({ noneTtlSeconds: 0 }),
+      clock: new FakeClock(),
+    });
     await cache.write(result({ riskTier: 'HIGH' }), KEY);
     expect(await cache.read(KEY)).toBeDefined();
 
-    await cache.write(result({ riskTier: 'NONE', cacheTtlSeconds: 0 }), KEY);
+    await cache.write(result({ riskTier: 'NONE' }), KEY);
 
     expect(await cache.read(KEY)).toBeUndefined();
     expect(await cache.count()).toBe(0);
@@ -187,10 +197,11 @@ describe('NoOpCheckCache', () => {
 });
 
 describe('PersistentCheckCache', () => {
-  function build(
+  function build({
     store = new FakeCheckCacheStore(),
     clock = new FakeClock(),
-  ): {
+    policy = CachePolicy.default,
+  }: { store?: FakeCheckCacheStore; clock?: FakeClock; policy?: CachePolicy } = {}): {
     cache: PersistentCheckCache;
     store: FakeCheckCacheStore;
     clock: FakeClock;
@@ -199,6 +210,7 @@ describe('PersistentCheckCache', () => {
       store,
       keyStore: new InMemoryCacheKeyStore({ random: fixedRandom() }),
       clock,
+      policy,
       cipher: new AesGcmCacheCipher({ dataKey: new Uint8Array(32).fill(3), random: fixedRandom() }),
     });
     return { cache, store, clock };
@@ -308,33 +320,31 @@ describe('PersistentCheckCache', () => {
   });
 
   /**
-   * A zero TTL is the only channel the server has for withdrawing an answer that already reached
-   * the device. Skipping the write honours it for the new result and ignores it for the stored
-   * one, which leaves a corrected HIGH verdict readable for the rest of its thirty-day TTL.
+   * Skipping the write would honour a zero TTL for the new result and ignore it for the stored
+   * one, which leaves a superseded HIGH verdict readable for the rest of its thirty-day TTL.
    */
-  it('deletes the stored row when the server retracts with a zero TTL', async () => {
-    const { cache, store } = build();
+  it('deletes the stored row when the new result lands on a zero-TTL tier', async () => {
+    const { cache, store } = build({ policy: CachePolicy.create({ noneTtlSeconds: 0 }) });
     await cache.write(result({ riskTier: 'HIGH' }), KEY);
     expect(store.rows.has(KEY.hex)).toBe(true);
 
-    await cache.write(result({ riskTier: 'NONE', cacheTtlSeconds: 0 }), KEY);
+    await cache.write(result({ riskTier: 'NONE' }), KEY);
 
     expect(store.rows.has(KEY.hex)).toBe(false);
     expect(await cache.read(KEY)).toBeUndefined();
   });
 
-  it('treats a negative TTL as the same retraction, because the policy clamps it to zero', async () => {
-    const { cache, store } = build();
+  it('treats a negative configured TTL the same way, because the policy clamps it to zero', async () => {
+    const { cache, store } = build({ policy: CachePolicy.create({ highTtlSeconds: -1 }) });
     await cache.write(result({ riskTier: 'HIGH' }), KEY);
-    await cache.write(result({ riskTier: 'HIGH', cacheTtlSeconds: -1 }), KEY);
     expect(store.rows.has(KEY.hex)).toBe(false);
   });
 
-  it('leaves other keys alone when one is retracted', async () => {
-    const { cache, store } = build();
+  it('leaves other keys alone when one is dropped', async () => {
+    const { cache, store } = build({ policy: CachePolicy.create({ noneTtlSeconds: 0 }) });
     await cache.write(result(), KEY);
     await cache.write(result(), OTHER_KEY);
-    await cache.write(result({ cacheTtlSeconds: 0 }), KEY);
+    await cache.write(result({ riskTier: 'NONE' }), KEY);
     expect(store.rows.has(KEY.hex)).toBe(false);
     expect(store.rows.has(OTHER_KEY.hex)).toBe(true);
   });

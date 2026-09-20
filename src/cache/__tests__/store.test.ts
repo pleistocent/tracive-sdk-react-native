@@ -70,7 +70,6 @@ describe('the persisted payload', () => {
       lastReportOn: new Date(1_650_000_000_000),
       fraudAmount: { IDR: 5000 },
       tags: ['a', 'b'],
-      cacheTtlSeconds: 120,
       disclaimer: 'text',
     });
     const restored = decodeCacheableResult(encodeCacheableResult(original));
@@ -78,7 +77,6 @@ describe('the persisted payload', () => {
     expect(restored.lastReportOn?.getTime()).toBe(1_650_000_000_000);
     expect(restored.fraudAmount).toEqual({ IDR: 5000 });
     expect(restored.tags).toEqual(['a', 'b']);
-    expect(restored.cacheTtlSeconds).toBe(120);
     expect(restored.disclaimer).toBe('text');
     // A replay is always labelled as one.
     expect(restored.origin).toBe('CACHE');
@@ -103,8 +101,9 @@ describe('the persisted payload', () => {
   });
 
   it('returns an expiry in the past for a result that was born stale', () => {
-    const stale = result({ cacheTtlSeconds: 0 });
-    expect(expiresAtMsFor(CachePolicy.default, stale)).toBe(stale.fetchedAt.getTime());
+    const stale = result({ riskTier: 'HIGH' });
+    const policy = CachePolicy.create({ highTtlSeconds: 0 });
+    expect(expiresAtMsFor(policy, stale)).toBe(stale.fetchedAt.getTime());
   });
 });
 

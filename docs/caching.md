@@ -95,16 +95,17 @@ removes that dependency entirely.
 | `CAUTION`  | 24 hours    |
 | `NONE`     | 1 hour      |
 
-A `cacheTtlSeconds` on the response **overrides** the per-tier default while
-`honorsServerTtlOverride` is on. That is the fleet-wide invalidation lever — leave it on.
+These numbers are the whole of the policy. Nothing in a response can change them: the backend used
+to be able to send a `cacheTtlSeconds` that replaced the tier default, which duplicated the ladder
+above on the server, so it is gone. A `cacheTtlSeconds` still arriving from a proxy is an unknown
+key and is ignored, not an error.
 
-A negative or zero effective TTL clamps to zero, and the entry is not stored — "immediately stale"
+A negative or zero configured TTL clamps to zero, and the entry is not stored — "immediately stale"
 is the only safe reading of a nonsense value, because the alternative arithmetic makes an entry
 eternally fresh. It also **deletes whatever was already held under that key**, which is the point
-rather than housekeeping: a zero TTL is the only way the server can withdraw an answer that has
-already reached the device. Skipping the write alone would honour the instruction for the new
-result and ignore it for the stored one, so a `HIGH` verdict the server has since corrected would
-keep being served for the rest of its thirty days.
+rather than housekeeping: skipping the write alone would honour a zeroed tier for the new result
+and ignore it for the stored one, so a superseded `HIGH` verdict would keep being served for the
+rest of its thirty days.
 
 `fetchedAt` is stamped from the same clock that measures freshness, so a device with a skewed system
 time cannot produce an entry that is fresh against one clock and stale against another.
@@ -195,7 +196,6 @@ UI knows that transfer spent nothing.
 | ----------------------------- | ----------------------------- | ---------------------------------------------------------- |
 | Keyed on                      | the identifier                | your transaction id, hashed, under a `txn:` prefix         |
 | Lifetime                      | tier TTL, 1 hour to 30 days   | `transactionCheckRetentionSeconds`, 90 days by default     |
-| Server `cacheTtlSeconds`      | applied, including retraction | **not applied** — a record of the past cannot be retracted |
 | Overwritten by a later check  | yes                           | no                                                         |
 | `origin` on read              | rewritten to `'CACHE'`        | kept as recorded                                           |
 | `checkId`, `billing`          | dropped                       | kept — this record _is_ that one call                      |

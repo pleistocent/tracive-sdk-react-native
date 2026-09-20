@@ -128,16 +128,15 @@ describe.each([
     expect(record?.riskTier).toBe('NONE');
   });
 
-  it('is not retracted by a server TTL of zero', async () => {
-    // `cacheTtlSeconds` is the backend's lever for un-trusting a verdict. Applied to a record it
-    // would erase the evidence that a warning was shown — precisely what a partner needs when the
-    // transfer is disputed.
+  it('is not dropped by a tier TTL of zero', async () => {
+    // A host that declines to cache HIGH at all must still be able to show what the user was
+    // warned about — precisely what a partner needs when the transfer is disputed.
     const clock = new FakeClock();
-    const cache = build(CachePolicy.default, clock);
-    const retracted = result({ cacheTtlSeconds: 0, fetchedAt: new Date(clock.nowMs()) });
+    const cache = build(CachePolicy.create({ highTtlSeconds: 0 }), clock);
+    const shown = result({ riskTier: 'HIGH', fetchedAt: new Date(clock.nowMs()) });
 
-    await cache.write(retracted, ACCOUNT);
-    await cache.writeTransactionCheck(retracted, FIRST_TRANSFER);
+    await cache.write(shown, ACCOUNT);
+    await cache.writeTransactionCheck(shown, FIRST_TRANSFER);
 
     expect(await cache.read(ACCOUNT)).toBeUndefined();
     expect((await cache.readTransactionCheck(FIRST_TRANSFER))?.riskTier).toBe('HIGH');

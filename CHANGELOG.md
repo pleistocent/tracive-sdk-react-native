@@ -28,9 +28,9 @@ All notable changes to this project are documented here. The format follows
   account cannot edit an earlier transaction's card. One check can be recorded against several
   transactions — the second transfer to an account you already checked is a cache hit, so it costs no
   credit, and its record carries `origin: 'CACHE'` to say so. Retention is
-  `CachePolicy.transactionCheckRetentionSeconds`, 90 days by default, and `cacheTtlSeconds` is
-  deliberately not applied to it: that field retracts a verdict the backend no longer stands behind,
-  which is the wrong lever for a record of what someone was already shown.
+  `CachePolicy.transactionCheckRetentionSeconds`, 90 days by default, and deliberately not a tier
+  TTL: a clean answer stops being trustworthy after an hour but never stops being what someone was
+  shown.
 
   It is a separate call rather than an argument to `checkScammer` because of when the two things
   happen: the check runs on the confirmation screen and the reference number is minted after the PIN,
@@ -51,6 +51,21 @@ All notable changes to this project are documented here. The format follows
   `riskAcceptedAt` — which is the audit trail you can defend and contains no result.
 
 ### Breaking
+
+- **The server TTL override is gone: `CachePolicy.honorsServerTtlOverride` and
+  `CheckResult.cacheTtlSeconds` are both removed.** The backend stopped sending `cacheTtlSeconds`
+  (`pleistocent-firebase@88fd6f9`) because its per-tier ladder was a copy of the one every SDK
+  already has locally; cache lifetime is the SDK's own business. So the flag gated a branch that
+  could never be taken. `CachePolicy.effectiveTtlSeconds(policy, result)` now returns the tier
+  default and nothing else; pass your own numbers through `CachePolicy.create` if you want
+  different ones. A `cacheTtlSeconds` still arriving from a proxy is ignored — the response mapper
+  and the cache payload parser both read named fields and skip the rest.
+
+  `CachePolicy.create({ honorsServerTtlOverride: false })` no longer typechecks, and the field is
+  gone from the persisted cache payload (an older row simply carries a key nothing reads).
+
+  One behaviour goes with it: a zero `cacheTtlSeconds` used to evict a row already on the device.
+  Setting that tier's TTL to zero in your own policy is now the only way to reach that path.
 
 - **`CheckCache` has three more members**, and `CheckCacheErrorKind` a new `invalidTransactionId`
   value. Anyone implementing the interface themselves — a test double, or a host that swapped the

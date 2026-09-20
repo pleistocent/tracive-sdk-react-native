@@ -118,7 +118,6 @@ export function decodeCheckResult(body: unknown, nowMs: number): CheckResult {
   const chronologies = decodeChronologies(record.topChronologies);
   const comments = decodeComments(record.comments);
   const billing = decodeBilling(record.billing);
-  const cacheTtlSeconds = record.cacheTtlSeconds;
   const disclaimer = asString(record.disclaimer);
 
   return {
@@ -136,7 +135,6 @@ export function decodeCheckResult(body: unknown, nowMs: number): CheckResult {
     ...(chronologies !== undefined ? { topChronologies: chronologies } : {}),
     ...(comments !== undefined ? { comments } : {}),
     ...(billing !== undefined ? { billing } : {}),
-    ...(typeof cacheTtlSeconds === 'number' ? { cacheTtlSeconds } : {}),
     ...(disclaimer !== undefined ? { disclaimer } : {}),
     origin: 'SERVER',
     fetchedAt: new Date(nowMs),

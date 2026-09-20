@@ -19,7 +19,6 @@ interface StoredResult {
   fraudAmount: Record<string, number>;
   tags: string[];
   relatedScammerCount: number;
-  cacheTtlSeconds?: number;
   disclaimer?: string;
   fetchedAtMs: number;
 }
@@ -38,7 +37,6 @@ export function encodeCacheableResult(result: CheckResult): string {
     fraudAmount: { ...result.fraudAmount },
     tags: [...result.tags],
     relatedScammerCount: result.relatedScammerCount,
-    ...(result.cacheTtlSeconds !== undefined ? { cacheTtlSeconds: result.cacheTtlSeconds } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     fetchedAtMs: result.fetchedAt.getTime(),
   };
@@ -73,7 +71,6 @@ export function decodeCacheableResult(json: string): CheckResult {
     fraudAmount: parsed.fraudAmount ?? {},
     tags: parsed.tags ?? [],
     relatedScammerCount: parsed.relatedScammerCount ?? 0,
-    ...(parsed.cacheTtlSeconds !== undefined ? { cacheTtlSeconds: parsed.cacheTtlSeconds } : {}),
     ...(parsed.disclaimer !== undefined ? { disclaimer: parsed.disclaimer } : {}),
     // A replay is always labelled as one, whatever the stored bytes claim.
     origin: 'CACHE',

@@ -12,8 +12,6 @@ export interface CachePolicy {
   readonly elevatedTtlSeconds: number;
   readonly cautionTtlSeconds: number;
   readonly noneTtlSeconds: number;
-  /** The fleet-wide invalidation lever. Leave it on. */
-  readonly honorsServerTtlOverride: boolean;
   /**
    * The cap on stored entries, enforced on every write and by `prune()`.
    *
@@ -46,8 +44,6 @@ export interface CachePolicy {
    * screen goes back further — and raise `maxEntries` with it, since records are counted by the same
    * cap as cache entries.
    *
-   * `honorsServerTtlOverride` does not reach these. `cacheTtlSeconds` retracts a verdict the backend
-   * no longer stands behind, which is the wrong lever for a record of what a user was already shown.
    */
   readonly transactionCheckRetentionSeconds: number;
 }
@@ -58,7 +54,6 @@ const DEFAULT_POLICY: CachePolicy = {
   elevatedTtlSeconds: 604_800,
   cautionTtlSeconds: 86_400,
   noneTtlSeconds: 3_600,
-  honorsServerTtlOverride: true,
   maxEntries: 5_000,
   transactionCheckRetentionSeconds: 7_776_000,
 };
@@ -79,14 +74,11 @@ function ttlSecondsFor(policy: CachePolicy, tier: RiskTier): number {
 }
 
 /**
- * A negative TTL clamps to zero. "Immediately stale" is the only safe reading of a nonsense
- * value; the alternative arithmetic would make the entry eternally fresh.
+ * The tier ladder is the whole policy — a response cannot override it. A negative configured TTL
+ * clamps to zero: "immediately stale" is the only safe reading of a nonsense value, and the
+ * alternative arithmetic would make the entry eternally fresh.
  */
 function effectiveTtlSeconds(policy: CachePolicy, result: CheckResult): number {
-  const override = result.cacheTtlSeconds;
-  if (policy.honorsServerTtlOverride && override !== undefined) {
-    return Math.max(0, override);
-  }
   return Math.max(0, ttlSecondsFor(policy, result.riskTier));
 }
 

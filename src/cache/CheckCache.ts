@@ -37,8 +37,8 @@ export interface CheckCache {
    *   transactions — a user who transfers to the same account twice — is two calls with two ids and
    *   one billed check.
    * - It OUTLIVES the cache entry. The lifetime is `policy.transactionCheckRetentionSeconds`, not a
-   *   tier TTL, and `cacheTtlSeconds` is not applied: that field retracts a verdict, and a record of
-   *   the past cannot be retracted.
+   *   tier TTL, because a clean answer stops being trustworthy after an hour but never stops being
+   *   what was shown.
    * - `origin` and `fetchedAt` are stored as given, so a record marked `'CACHE'` is the honest
    *   statement that this transfer spent no credit.
    *
@@ -182,9 +182,7 @@ export class InMemoryCheckCache implements CheckCache {
     if (!this.policy.enabled) return Promise.resolve();
     const ttlSeconds = CachePolicy.effectiveTtlSeconds(this.policy, result);
     if (ttlSeconds <= 0) {
-      // Deleted rather than skipped, for the reason spelled out in `PersistentCheckCache.write`:
-      // a zero TTL is the server retracting an answer, so leaving the previous entry in place
-      // would keep serving the verdict it just withdrew.
+      // Deleted rather than skipped, for the reason spelled out in `PersistentCheckCache.write`.
       this.#entries.delete(key.hex);
       return Promise.resolve();
     }

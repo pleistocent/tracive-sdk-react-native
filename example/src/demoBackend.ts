@@ -146,9 +146,6 @@ export class DemoBackend implements HttpTransport {
           }
         : {}),
       billing: { creditSource: 'USER', unitsCharged: 1 },
-      // The server-driven TTL override. Short here so the cache's behaviour stays observable
-      // inside one demo session rather than over the tier's real 30 days.
-      cacheTtlSeconds: 600,
       disclaimer:
         'These are user-submitted reports, not adjudicated findings. Verify independently ' +
         'before acting on them.',

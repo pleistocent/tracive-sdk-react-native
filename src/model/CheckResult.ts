@@ -24,8 +24,6 @@ export interface CheckResult {
   readonly comments?: readonly Comment[];
   /** Absent on a cache hit, because a hit is free. */
   readonly billing?: Billing;
-  /** A server-side TTL override that replaces the per-tier default. */
-  readonly cacheTtlSeconds?: number;
   /** Legal text that MUST be surfaced in any UI built on this result. */
   readonly disclaimer?: string;
   readonly origin: Origin;
@@ -78,7 +76,6 @@ export function toTransactionRecordCopy(result: CheckResult): CheckResult {
     tags: result.tags,
     relatedScammerCount: result.relatedScammerCount,
     ...(result.billing !== undefined ? { billing: result.billing } : {}),
-    ...(result.cacheTtlSeconds !== undefined ? { cacheTtlSeconds: result.cacheTtlSeconds } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     origin: result.origin,
     fetchedAt: result.fetchedAt,
@@ -97,7 +94,6 @@ export function toCacheableCopy(result: CheckResult): CheckResult {
     fraudAmount: result.fraudAmount,
     tags: result.tags,
     relatedScammerCount: result.relatedScammerCount,
-    ...(result.cacheTtlSeconds !== undefined ? { cacheTtlSeconds: result.cacheTtlSeconds } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     origin: 'CACHE',
     fetchedAt: result.fetchedAt,

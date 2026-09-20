@@ -127,15 +127,10 @@ export class PersistentCheckCache implements CheckCache {
   async write(result: CheckResult, key: CheckCacheKey): Promise<void> {
     if (!this.policy.enabled) return;
     if (CachePolicy.effectiveTtlSeconds(this.policy, result) <= 0) {
-      // The row is DELETED, not merely left unwritten. A zero TTL is the server saying "do not
-      // keep this answer", and it is the only way it can retract one that is already on the
-      // device — there is no other channel from the server to a stored row. Returning without
-      // touching the store honours the instruction for the new answer and ignores it for the old
-      // one, so a HIGH verdict the server has since corrected keeps being served from disk for
-      // the rest of its thirty-day TTL, with no request going out that could learn otherwise.
-      //
-      // A negative override arrives here as zero, because `CachePolicy.effectiveTtlSeconds`
-      // clamps it, and it means the same thing.
+      // The row is DELETED, not merely left unwritten. A host that zeroes a tier's TTL is saying
+      // "do not keep this kind of answer", and returning without touching the store would honour
+      // that for the new answer while leaving an older HIGH verdict readable from disk for the
+      // rest of its thirty days.
       await this.#guard('storageFailure', () => this.#store.delete(key.hex));
       return;
     }
