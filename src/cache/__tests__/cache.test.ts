@@ -62,9 +62,9 @@ describe('CachePolicy TTLs', () => {
   });
 
   it('ignores a cacheTtlSeconds still present on the result', () => {
-    // The backend stopped sending this field (pleistocent-firebase@88fd6f9) and the SDK no longer
-    // models it. A proxy that still sends it reaches the mapper as an unknown key, so the tier
-    // default has to win. Cast, because the property is gone from the type.
+    // The backend stopped sending this field and the SDK no longer models it. A proxy that still
+    // sends it reaches the mapper as an unknown key, so the tier default has to win. Cast,
+    // because the property is gone from the type.
     const withRetiredField = {
       ...result({ riskTier: 'HIGH' }),
       cacheTtlSeconds: 60,

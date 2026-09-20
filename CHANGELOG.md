@@ -54,12 +54,12 @@ All notable changes to this project are documented here. The format follows
 
 - **The server TTL override is gone: `CachePolicy.honorsServerTtlOverride` and
   `CheckResult.cacheTtlSeconds` are both removed.** The backend stopped sending `cacheTtlSeconds`
-  (`pleistocent-firebase@88fd6f9`) because its per-tier ladder was a copy of the one every SDK
-  already has locally; cache lifetime is the SDK's own business. So the flag gated a branch that
-  could never be taken. `CachePolicy.effectiveTtlSeconds(policy, result)` now returns the tier
-  default and nothing else; pass your own numbers through `CachePolicy.create` if you want
-  different ones. A `cacheTtlSeconds` still arriving from a proxy is ignored — the response mapper
-  and the cache payload parser both read named fields and skip the rest.
+   because its per-tier ladder was a copy of the one every SDK already has locally; cache lifetime
+  is the SDK's own business. So the flag gated a branch that could never be taken.
+  `CachePolicy.effectiveTtlSeconds(policy, result)` now returns the tier default and nothing else;
+  pass your own numbers through `CachePolicy.create` if you want different ones. A
+  `cacheTtlSeconds` still arriving from a proxy is ignored — the response mapper and the cache
+  payload parser both read named fields and skip the rest.
 
   `CachePolicy.create({ honorsServerTtlOverride: false })` no longer typechecks, and the field is
   gone from the persisted cache payload (an older row simply carries a key nothing reads).
