@@ -54,7 +54,7 @@ All notable changes to this project are documented here. The format follows
 
 - **The server TTL override is gone: `CachePolicy.honorsServerTtlOverride` and
   `CheckResult.cacheTtlSeconds` are both removed.** The backend stopped sending `cacheTtlSeconds`
-   because its per-tier ladder was a copy of the one every SDK already has locally; cache lifetime
+  because its per-tier ladder was a copy of the one every SDK already has locally; cache lifetime
   is the SDK's own business. So the flag gated a branch that could never be taken.
   `CachePolicy.effectiveTtlSeconds(policy, result)` now returns the tier default and nothing else;
   pass your own numbers through `CachePolicy.create` if you want different ones. A
@@ -79,6 +79,13 @@ All notable changes to this project are documented here. The format follows
   **rejected promise**, never as a synchronous throw out of a call whose type says `Promise`.
 
 ### Fixed
+
+- **A 429 is no longer retried.** `credits()`, `profile()` and a check carrying your
+  `idempotencyKey` used to sleep for the `Retry-After` and send again, up to three times. A spent
+  daily quota answers with a `Retry-After` that runs to the next UTC midnight, so one call could
+  hold its caller for most of a day and still end in `rateLimited`. A 429 now surfaces on the first
+  response as `rateLimited` with `retryAfterSeconds`, as it already did in the Kotlin and Flutter
+  SDKs. 5xx and network retries are unchanged.
 
 - **The quick start in `README.md` did not compile.** It omitted `partnerUserId`, which the OAuth
   configuration requires and gives no default, so the first thing anyone starting from the README

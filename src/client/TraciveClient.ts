@@ -57,9 +57,10 @@ export interface CheckScammerOptions {
   /**
    * Pass one if you intend to retry.
    *
-   * WITHOUT IT THE SDK WILL NOT RETRY a 5xx, a 429 or a timeout, because it cannot tell whether
-   * the first attempt was already charged and a blind retry risks a double charge. The same key
-   * is reused on every attempt, which is what lets the server deduplicate.
+   * WITHOUT IT THE SDK WILL NOT RETRY a 5xx or a timeout, because it cannot tell whether the
+   * first attempt was already charged and a blind retry risks a double charge. The same key is
+   * reused on every attempt, which is what lets the server deduplicate. A 429 is never retried,
+   * key or no key: it surfaces as `rateLimited` with `retryAfterSeconds`.
    *
    * The request always carries SOME `Idempotency-Key`: when you supply none, the SDK generates a
    * per-call one so that its own replay after a 401 token refresh can be collapsed server-side.
@@ -481,7 +482,7 @@ export class TraciveClient {
       path: TRACIVE_API_PATHS.scammerChecks,
       body: JSON.stringify(body),
       // The one rule that costs real money if it is wrong: a check is retryable only when the
-      // CALLER supplied an idempotency key. Without one, the first 5xx, 429 or timeout is
+      // CALLER supplied an idempotency key. Without one, the first 5xx or timeout is
       // surfaced immediately rather than gambling the caller's credit on a guess. A key the SDK
       // generated below does not change that and must not: the caller's key is the only thing
       // that survives a process restart and a new client instance, which is what a retry budget
@@ -505,10 +506,7 @@ export class TraciveClient {
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
 
-    return decodeCheckResult(
-      parseSuccessBody(response.body, response.status),
-      this.#clock.nowMs(),
-    );
+    return decodeCheckResult(parseSuccessBody(response.body, response.status), this.#clock.nowMs());
   }
 
   async #authorizationHeaders(): Promise<Record<string, string>> {
@@ -616,7 +614,10 @@ export class TraciveClient {
         throw error;
       }
 
-      const worthRetrying = response.status === 429 || response.status >= 500;
+      // A 429 is never retried, keyed or not: its Retry-After can run to the next UTC midnight, and
+      // sleeping on it inside one call would hold the caller for hours. The caller gets
+      // `rateLimited` with `retryAfterSeconds` at once and decides whether waiting is acceptable.
+      const worthRetrying = response.status >= 500;
       if (!worthRetrying || attempt >= maxAttempts) throw error;
       await this.#backoff(++attempt, retryAfterSeconds, input.signal);
     }

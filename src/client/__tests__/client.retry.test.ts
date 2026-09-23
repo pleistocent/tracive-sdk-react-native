@@ -208,7 +208,7 @@ describe('a check WITH an idempotency key', () => {
     expect(transport.requests).toHaveLength(1);
   });
 
-  it('does not retry a 4xx that is not a 429', async () => {
+  it('does not retry a 4xx', async () => {
     const transport = new FakeTransport().always(jsonResponse(400, { code: 'invalid_request' }));
     const { client } = build({ transport });
     await expect(
@@ -258,14 +258,65 @@ describe('GET requests', () => {
   });
 });
 
+/**
+ * A 429 is surfaced on the first response, even on a request that is otherwise retryable. A spent
+ * daily quota answers with a `Retry-After` that runs to the next UTC midnight — up to a day — and
+ * sleeping on it inside one call held the caller for that long and then sent the request again
+ * into the same refusal.
+ */
+describe('a 429', () => {
+  const DAILY_QUOTA = jsonResponse(
+    429,
+    { code: 'daily_quota_exceeded', message: 'Daily quota exceeded.' },
+    { 'retry-after': '43200' },
+  );
+
+  it('is not retried on credits(), which is otherwise always retryable', async () => {
+    const transport = new FakeTransport().always(DAILY_QUOTA);
+    const { client, clock } = build({ transport });
+
+    await expect(client.credits()).rejects.toMatchObject({
+      kind: 'rateLimited',
+      retryAfterSeconds: 43_200,
+    });
+    expect(transport.requests).toHaveLength(1);
+    expect(clock.sleeps).toEqual([]);
+  });
+
+  it('is not retried on a check that carries the caller’s idempotency key', async () => {
+    const transport = new FakeTransport().always(DAILY_QUOTA);
+    const { client, clock } = build({ transport });
+
+    await expect(
+      client.checkScammer(QUERY, { source: 'SERVER', idempotencyKey: 'idem-429' }),
+    ).rejects.toMatchObject({ kind: 'rateLimited', retryAfterSeconds: 43_200 });
+    expect(transport.requests).toHaveLength(1);
+    expect(clock.sleeps).toEqual([]);
+  });
+
+  it('is not retried when it is an ordinary rate_limited either', async () => {
+    const transport = new FakeTransport().always(
+      jsonResponse(429, { code: 'rate_limited' }, { 'retry-after': '1' }),
+    );
+    const { client, clock } = build({ transport });
+
+    await expect(client.profile()).rejects.toMatchObject({
+      kind: 'rateLimited',
+      retryAfterSeconds: 1,
+    });
+    expect(transport.requests).toHaveLength(1);
+    expect(clock.sleeps).toEqual([]);
+  });
+});
+
 describe('Retry-After', () => {
-  it('beats the computed backoff, in the seconds form', async () => {
+  it('beats the computed backoff on a 5xx, in the seconds form', async () => {
     const transport = new FakeTransport()
-      .enqueue(jsonResponse(429, { code: 'rate_limited' }, { 'retry-after': '42' }))
+      .enqueue(jsonResponse(503, { code: 'server_error' }, { 'retry-after': '4' }))
       .enqueue(jsonResponse(200, { subscriptionCredits: 1, tier: 'free' }));
     const { client, clock } = build({ transport });
     await client.credits();
-    expect(clock.sleeps).toEqual([42]);
+    expect(clock.sleeps).toEqual([4]);
   });
 
   it('beats the computed backoff even when longer than maxBackoffSeconds', async () => {

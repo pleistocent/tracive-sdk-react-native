@@ -16,7 +16,7 @@ export interface RetryPolicy {
  * the values drifted apart once already because nothing recorded what any of them was for, and a
  * number with no stated reason is one the next person is free to round off.
  *
- * - **`maxAttempts: 3`** — the first send plus two retries. A transient 5xx or 429 nearly always
+ * - **`maxAttempts: 3`** — the first send plus two retries. A transient 5xx nearly always
  *   clears inside a couple of seconds; a third consecutive failure is a signal rather than noise,
  *   and further attempts only add load to a server that is already struggling. It is deliberately
  *   small because on a check every attempt is a potential charge, which is also why the budget can
@@ -34,8 +34,12 @@ export interface RetryPolicy {
  *   for someone reading a log to recognise the schedule.
  * - **`maxBackoffSeconds: 8`** — the ceiling. At these defaults it never binds, because the last
  *   retry waits one second; it exists for a caller who raises `maxAttempts`, and caps the wait at
- *   something a user will still sit through. A `Retry-After` from the server overrides it outright,
+ *   something a user will still sit through. A `Retry-After` on a 5xx overrides it outright,
  *   including upwards — see `backoffSecondsFor`.
+ *
+ * A 429 is never retried at all, whatever these numbers say. Its `Retry-After` can point at the
+ * next UTC midnight, so the client surfaces `rateLimited` with `retryAfterSeconds` instead of
+ * sleeping on it.
  */
 const DEFAULT_RETRY: RetryPolicy = {
   maxAttempts: 3,
@@ -73,7 +77,7 @@ export const RetryPolicy: {
  *
  * `retryAfterSeconds` wins outright when the policy respects it, **including when it is longer
  * than `maxBackoffSeconds`** — a server asking for 60 seconds means 60 seconds, and clamping it
- * down would send the stampede straight back.
+ * down would send the stampede straight back. Only a 5xx reaches this: a 429 is never retried.
  *
  * `randomFraction` is injected rather than read from `Math.random` so the schedule is testable.
  * Jitter is a scheduling nicety, never a security primitive, so a non-CSPRNG source is correct

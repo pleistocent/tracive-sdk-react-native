@@ -277,8 +277,8 @@ flowchart TD
   Outcome -->|"2xx"| Ttl{"cacheApplies, cache enabled, and effective TTL above zero?"}
   Outcome -->|"401 that is neither grantRevoked nor invalidToken"| Renew["refreshTokens once, then re-attempt"]
   Renew --> Attempt
-  Outcome -->|"any other 4xx, including 402 and 403"| Fail["throw TraciveError"]
-  Outcome -->|"429, 5xx or a transport failure"| Budget{"idempotencyKey supplied and attempts remaining?"}
+  Outcome -->|"any other 4xx, including 402, 403 and 429"| Fail["throw TraciveError"]
+  Outcome -->|"5xx or a transport failure"| Budget{"idempotencyKey supplied and attempts remaining?"}
   Budget -->|"no"| Fail
   Budget -->|"yes"| Wait["sleep for Retry-After, or the jittered exponential backoff"]
   Wait --> Attempt
@@ -296,10 +296,14 @@ verdict. `cacheApplies` is the second condition on that same fallback, and both 
 ### Retrying costs money, so you have to ask
 
 `checkScammer` is retryable **only when you pass an `idempotencyKey`**. Without one the SDK cannot
-tell whether the first attempt was already charged, so the first 429, 5xx or timeout is surfaced
+tell whether the first attempt was already charged, so the first 5xx or timeout is surfaced
 immediately rather than gambling your credit on a guess. The same key is reused on every attempt,
 which is what lets the server deduplicate. `GET /credits` and `GET /profile` have no side effects
 and are always retryable.
+
+A 429 is never retried, on any request, key or no key. It surfaces at once as `rateLimited` with
+`retryAfterSeconds`. A spent daily quota answers with a `Retry-After` that runs to the next UTC
+midnight, and waiting that out is a decision for your screen, not for a call in flight.
 
 The 401-refresh branch deliberately does **not** consume the retry budget, and can happen at most
 once per request.

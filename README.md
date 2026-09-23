@@ -479,10 +479,14 @@ answer that looks complete. The Kotlin, Swift and Flutter SDKs behave identicall
 await client.checkScammer(query, { idempotencyKey: someUniqueId });
 ```
 
-**Without an idempotency key the SDK will not retry a 5xx, a 429 or a timeout.** It cannot tell
+**Without an idempotency key the SDK will not retry a 5xx or a timeout.** It cannot tell
 whether the first attempt was already charged, and a blind retry risks a double charge. Pass a key
 if you intend to retry; the same key is reused on every attempt, which is what lets the server
 deduplicate. `GET /credits` and `GET /profile` have no side effects and are always retryable.
+
+**A 429 is never retried, key or no key.** It surfaces at once as `rateLimited` with
+`retryAfterSeconds`, which can be as long as the time left until 00:00 UTC. Whether to wait is
+your call.
 
 The request always carries _some_ `Idempotency-Key`: when you pass none, the SDK generates a
 per-call one, so that its own replay after a 401 token refresh can be collapsed server-side. That

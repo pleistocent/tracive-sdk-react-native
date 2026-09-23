@@ -45,5 +45,6 @@ const client = new TraciveClient({
 - Return the upstream status and error code verbatim. The SDK maps `(status, code)` to an error
   kind and carries an unrecognised code through untouched; rewriting a 402 into a 500 turns a
   billing answer into something `SERVER_FIRST` will happily mask with a cached verdict.
-- Preserve `Retry-After`. It beats the SDK's computed backoff, including when it is longer than the
-  configured maximum.
+- Preserve `Retry-After`. On a 429 it is what `retryAfterSeconds` carries to the caller (the SDK
+  never retries a 429 itself); on a 5xx it beats the SDK's computed backoff, including when it is
+  longer than the configured maximum.
