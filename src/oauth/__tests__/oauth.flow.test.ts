@@ -622,6 +622,29 @@ describe('the SDK constants', () => {
     }
   });
 
+  it('refuses a partnerUserId the server would refuse (SDK-2)', () => {
+    const make = (partnerUserId: string) => () =>
+      new TraciveOAuth({
+        mode: { clientId: 'c', redirectUri: 'https://p.test/cb', partnerUserId },
+      });
+    for (const refused of [
+      'x'.repeat(201),
+      'budi@example.com',
+      'budi@localhost',
+      '+6281234567890',
+      '0812-3456-7890',
+      '628123456789',
+      '(0812) 3456 7890',
+    ]) {
+      expect(make(refused)).toThrow(
+        expect.objectContaining({ code: 'invalid_partner_user_id' }) as unknown as Error,
+      );
+    }
+    for (const accepted of ['x'.repeat(200), '1234567890', 'cif-00012345', 'pengguna-ñ-日本']) {
+      expect(make(accepted)).not.toThrow();
+    }
+  });
+
   it('probes the bare scheme, and the sandbox one in sandbox', () => {
     // This assertion used to read `tracive://authorize`, under a test named
     // "matches the sibling SDKs" — and no sibling used it. Kotlin checks the package id, Swift

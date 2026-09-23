@@ -88,25 +88,44 @@ const SPENT_REFRESH_TOKEN_HISTORY = 8;
  * that turns out to be wrong — that failure is the partner's own and is visible to them, which is
  * the whole reason not to paper over it.
  */
+const PARTNER_USER_ID_MAX_LENGTH = 200;
+
 /**
- * Refuses a blank `partnerUserId` where the mistake was made.
+ * Why the server would refuse `value` as a `partner_user_id` (backend `partnerUserIdProblem`), or
+ * null when it accepts it. KEEP IN SYNC with the server and the other three SDKs.
+ */
+function partnerUserIdProblem(value: string): string | null {
+  const v = value.trim();
+  if (v === '') return 'must not be blank';
+  if (v.length > PARTNER_USER_ID_MAX_LENGTH) {
+    return `must be at most ${PARTNER_USER_ID_MAX_LENGTH} characters`;
+  }
+  if (v.includes('@')) return 'looks like an email address';
+  const compact = v.replace(/[\s\-().]/g, '');
+  if (/^\+\d{7,15}$/.test(compact) || /^(08|628)\d{8,11}$/.test(compact)) {
+    return 'looks like a phone number';
+  }
+  return null;
+}
+
+/**
+ * Refuses a `partnerUserId` the server would refuse, where the mistake was made.
  *
- * TypeScript makes the field required, which is enough for a TypeScript caller and nothing at all
- * for a JavaScript one, or for a value that arrived from a form, a config file or an API. Left
- * unchecked it went out as `partner_user_id=`, and the Tracive app rejects that client-side with no
- * redirect — so the partner app receives nothing to handle and no log anywhere records the attempt.
- * Kotlin, Swift and Flutter all reject at construction; this is the same gate.
+ * TypeScript makes the field required, which is nothing at all for a JavaScript caller or a value
+ * from a form or config. The server refuses a blank, over-long, email- or phone-shaped id before a
+ * redirect exists (audit SDK-2), so the partner app would receive nothing to handle.
  */
 function requirePartnerUserId(configuration: OAuthConfiguration): void {
-  if (configuration.partnerUserId.trim() === '') {
-    throw new TraciveConfigurationError(
-      'blank_partner_user_id',
-      'partnerUserId is blank. The authorization request has to carry one: the Tracive app ' +
-        'refuses a consent without it, client-side and with no redirect, so the failure would ' +
-        'reach you as silence rather than as an error. It is also what the grant is keyed on — ' +
-        'echoed back in grant.revoked so you can map the event to your own customer.',
-    );
-  }
+  const problem = partnerUserIdProblem(configuration.partnerUserId);
+  if (problem === null) return;
+  const blank = configuration.partnerUserId.trim() === '';
+  throw new TraciveConfigurationError(
+    blank ? 'blank_partner_user_id' : 'invalid_partner_user_id',
+    `partnerUserId ${problem}. Send an opaque id you store — a UUID or your own customer key — ` +
+      'because it is stored as sent and echoed back in grant.revoked so you can map the event ' +
+      'to your own customer. The Tracive app refuses anything else with no redirect, so the ' +
+      'failure would reach you as silence rather than as an error.',
+  );
 }
 
 function resolveInstallUrl(configured: string | undefined): string {

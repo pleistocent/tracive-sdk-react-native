@@ -16,6 +16,8 @@
  *   quietly replaced with the built-in install link.
  * - `blank_partner_user_id` — `partnerUserId` is blank. The authorization request must carry
  *   one; the Tracive app refuses a consent without it client-side, and returns no redirect.
+ * - `invalid_partner_user_id` — `partnerUserId` is longer than 200 characters, contains `@`, or
+ *   is shaped like a phone number. The server refuses it the same way, with no redirect.
  */
 export class TraciveConfigurationError extends Error {
   override readonly name = 'TraciveConfigurationError' as const;
