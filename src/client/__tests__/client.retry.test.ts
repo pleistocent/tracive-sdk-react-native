@@ -278,6 +278,7 @@ describe('a 429', () => {
     await expect(client.credits()).rejects.toMatchObject({
       kind: 'rateLimited',
       retryAfterSeconds: 43_200,
+      isDailyQuotaExceeded: true,
     });
     expect(transport.requests).toHaveLength(1);
     expect(clock.sleeps).toEqual([]);

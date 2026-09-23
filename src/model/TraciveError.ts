@@ -12,6 +12,8 @@ export type TraciveErrorKind =
   | 'detailNotPermitted'
   | 'credentialMismatch'
   | 'partnerSuspended'
+  | 'userCreditNotPermitted'
+  | 'translationNotPermitted'
   | 'idempotencyConflict'
   | 'rateLimited'
   | 'network'
@@ -58,7 +60,10 @@ export class TraciveError extends Error {
   readonly kind: TraciveErrorKind;
   readonly status?: number | undefined;
   readonly info?: TraciveErrorInfo | undefined;
-  /** Populated when `kind === 'rateLimited'`. */
+  /**
+   * Populated when `kind === 'rateLimited'`. For a spent daily quota it runs to the next 00:00 UTC —
+   * see {@link TraciveError.isDailyQuotaExceeded}.
+   */
   readonly retryAfterSeconds?: number | undefined;
   /** Populated when `kind === 'insufficientCredits'`. */
   readonly which?: InsufficientCreditsKind | undefined;
@@ -82,6 +87,15 @@ export class TraciveError extends Error {
   get serverCode(): string | undefined {
     return this.info?.code;
   }
+
+  /**
+   * A `rateLimited` error whose cause is the organisation's daily check quota
+   * (`daily_quota_exceeded`) rather than a short burst limit. Waiting a few seconds will not help;
+   * `retryAfterSeconds` points at the reset at 00:00 UTC.
+   */
+  get isDailyQuotaExceeded(): boolean {
+    return this.kind === 'rateLimited' && this.info?.code === 'daily_quota_exceeded';
+  }
 }
 
 export function isTraciveError(value: unknown): value is TraciveError {
@@ -104,8 +118,13 @@ const KIND_BY_CODE: Readonly<Record<string, TraciveErrorKind>> = {
   detail_not_permitted: 'detailNotPermitted',
   credential_mismatch: 'credentialMismatch',
   partner_suspended: 'partnerSuspended',
+  user_credit_not_permitted: 'userCreditNotPermitted',
+  translation_not_permitted: 'translationNotPermitted',
   idempotency_conflict: 'idempotencyConflict',
   rate_limited: 'rateLimited',
+  // Stays `rateLimited` so an existing handler for it keeps working; `isDailyQuotaExceeded` tells
+  // the two apart.
+  daily_quota_exceeded: 'rateLimited',
 };
 
 const INSUFFICIENT_CREDITS_KINDS: readonly InsufficientCreditsKind[] = [

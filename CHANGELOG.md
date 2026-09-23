@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Three newer server error codes now have a type.** `user_credit_not_permitted` and
+  `translation_not_permitted` (both 403 on a check) map to the new kinds `userCreditNotPermitted`
+  and `translationNotPermitted` instead of `unknown`. `daily_quota_exceeded` stays `rateLimited`,
+  so an existing handler keeps working, and the new `error.isDailyQuotaExceeded` tells it apart
+  from a short burst limit. An exhaustive `switch` over `TraciveErrorKind` gains two arms.
+
 - **A check can now be recorded against your own transaction, so a transaction-detail screen can show
   it again later.** `client.cache` gains `writeTransactionCheck`, `readTransactionCheck` and
   `removeTransactionCheck`.

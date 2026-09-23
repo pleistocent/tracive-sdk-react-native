@@ -331,6 +331,14 @@ grant is stored: either nobody has authorized yet, or the stored record has neit
 nor a refresh token left. Nothing reaches the server on that path, so nothing is billed. Send the
 user through `authorize()`.
 
+Three more are about your contract or quota rather than your code:
+
+| `error.kind`              | When                                                                                                                                                     | What to do                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `userCreditNotPermitted`  | 403 on a check: your contract does not let you charge the user's subscription credits                                                                    | contact Tracive; retrying will not help                                                                |
+| `translationNotPermitted` | 403 on a `detail: 'full'` check with a non-English `locale`: your contract withholds translation, or the user has no premium subscription                | check again without `locale` for the English result                                                    |
+| `rateLimited`             | 429. When `error.isDailyQuotaExceeded` is `true`, the organisation's daily check quota is spent and `retryAfterSeconds` points at the reset at 00:00 UTC | never retried by the SDK; wait `retryAfterSeconds`, and for the daily quota tell the user to try later |
+
 A record that has lost only its access token is **not** that case. While the refresh token beside it
 is still good, the SDK renews it with a single `POST /oauth/token` and carries on — so you may see
 one unexplained refresh before the call you actually made. That state is reachable from a partial

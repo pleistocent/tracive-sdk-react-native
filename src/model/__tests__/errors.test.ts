@@ -24,8 +24,11 @@ describe('status/code to kind mapping', () => {
     [403, 'detail_not_permitted', 'detailNotPermitted'],
     [403, 'credential_mismatch', 'credentialMismatch'],
     [403, 'partner_suspended', 'partnerSuspended'],
+    [403, 'user_credit_not_permitted', 'userCreditNotPermitted'],
+    [403, 'translation_not_permitted', 'translationNotPermitted'],
     [409, 'idempotency_conflict', 'idempotencyConflict'],
     [429, 'rate_limited', 'rateLimited'],
+    [429, 'daily_quota_exceeded', 'rateLimited'],
   ])('maps (%i, %s) to %s', (status, code, kind) => {
     const error = traciveErrorFrom({ status, code });
     expect(error.kind).toBe(kind);
@@ -35,6 +38,41 @@ describe('status/code to kind mapping', () => {
   it('records which insufficient-credits variant fired', () => {
     expect(traciveErrorFrom({ status: 402, code: 'insufficient_partner_balance' }).which).toBe(
       'insufficient_partner_balance',
+    );
+  });
+});
+
+describe('a spent daily quota', () => {
+  it('is a rateLimited error that says it is the daily quota, with its Retry-After', () => {
+    const error = traciveErrorFrom({
+      status: 429,
+      code: 'daily_quota_exceeded',
+      retryAfterSeconds: 43_200,
+    });
+    expect(error.kind).toBe('rateLimited');
+    expect(error.isDailyQuotaExceeded).toBe(true);
+    expect(error.retryAfterSeconds).toBe(43_200);
+  });
+
+  it('is not claimed by an ordinary rate limit, an unknown 429 code or another kind', () => {
+    expect(traciveErrorFrom({ status: 429, code: 'rate_limited' }).isDailyQuotaExceeded).toBe(
+      false,
+    );
+    expect(traciveErrorFrom({ status: 429, code: 'slow_down' }).isDailyQuotaExceeded).toBe(false);
+    expect(traciveErrorFrom({ status: 429 }).isDailyQuotaExceeded).toBe(false);
+    expect(
+      traciveErrorFrom({ status: 403, code: 'user_credit_not_permitted' }).isDailyQuotaExceeded,
+    ).toBe(false);
+  });
+});
+
+describe('the two not-permitted refusals', () => {
+  it('are final answers, not transient ones', () => {
+    expect(traciveErrorFrom({ status: 403, code: 'user_credit_not_permitted' }).isTransient).toBe(
+      false,
+    );
+    expect(traciveErrorFrom({ status: 403, code: 'translation_not_permitted' }).isTransient).toBe(
+      false,
     );
   });
 });
