@@ -640,7 +640,7 @@ describe('the SDK constants', () => {
         expect.objectContaining({ code: 'invalid_partner_user_id' }) as unknown as Error,
       );
     }
-    for (const accepted of ['x'.repeat(200), '1234567890', 'cif-00012345', 'pengguna-ñ-日本']) {
+    for (const accepted of ['x'.repeat(200), '1234567890', 'cif-00012345', 'user-ñ-日本']) {
       expect(make(accepted)).not.toThrow();
     }
   });
