@@ -75,9 +75,10 @@ export const RetryPolicy: {
 /**
  * The delay before attempt number `attempt` (1-based, so attempt 2 is the first retry).
  *
- * `retryAfterSeconds` wins outright when the policy respects it, **including when it is longer
- * than `maxBackoffSeconds`** — a server asking for 60 seconds means 60 seconds, and clamping it
- * down would send the stampede straight back. Only a 5xx reaches this: a 429 is never retried.
+ * `retryAfterSeconds` is honoured when the policy respects it, but never past `maxBackoffSeconds`.
+ * Only a 5xx reaches this (a 429 is never retried), and our server sends no Retry-After on one, so
+ * the header can only come from a gateway in between — whose 503 with an hour's Retry-After must not
+ * hold a call for an hour. Kotlin and Flutter never wait past the ceiling either (audit SDK-1).
  *
  * `randomFraction` is injected rather than read from `Math.random` so the schedule is testable.
  * Jitter is a scheduling nicety, never a security primitive, so a non-CSPRNG source is correct
@@ -90,7 +91,7 @@ export function backoffSecondsFor(
   randomFraction: number,
 ): number {
   if (policy.respectsRetryAfter && retryAfterSeconds !== undefined) {
-    return Math.max(0, retryAfterSeconds);
+    return Math.min(policy.maxBackoffSeconds, Math.max(0, retryAfterSeconds));
   }
   const exponent = Math.max(0, attempt - 2);
   const raw = policy.initialBackoffSeconds * Math.pow(policy.multiplier, exponent);

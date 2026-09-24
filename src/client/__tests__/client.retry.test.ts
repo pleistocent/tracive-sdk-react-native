@@ -320,26 +320,26 @@ describe('Retry-After', () => {
     expect(clock.sleeps).toEqual([4]);
   });
 
-  it('beats the computed backoff even when longer than maxBackoffSeconds', async () => {
-    // A server asking for 60 seconds means 60 seconds; clamping would send the stampede back.
+  it('is capped at maxBackoffSeconds when longer (audit SDK-1)', async () => {
+    // Our server sends no Retry-After on a 5xx; a gateway's 503 asking for an hour must not hold
+    // the call for an hour. Kotlin and Flutter never wait past the ceiling either.
     const transport = new FakeTransport()
-      .enqueue(jsonResponse(503, {}, { 'retry-after': '60' }))
+      .enqueue(jsonResponse(503, {}, { 'retry-after': '3600' }))
       .enqueue(jsonResponse(200, { subscriptionCredits: 1, tier: 'free' }));
     const { client, clock } = build({ transport });
     await client.credits();
-    expect(clock.sleeps).toEqual([60]);
-    expect(60).toBeGreaterThan(RetryPolicy.default.maxBackoffSeconds);
+    expect(clock.sleeps).toEqual([RetryPolicy.default.maxBackoffSeconds]);
   });
 
   it('accepts the HTTP-date form, relative to the injected clock', async () => {
     const clockNow = new FakeClock().nowMs();
-    const httpDate = new Date(clockNow + 30_000).toUTCString();
+    const httpDate = new Date(clockNow + 5_000).toUTCString();
     const transport = new FakeTransport()
       .enqueue(jsonResponse(503, {}, { 'retry-after': httpDate }))
       .enqueue(jsonResponse(200, { subscriptionCredits: 1, tier: 'free' }));
     const { client, clock } = build({ transport });
     await client.credits();
-    expect(clock.sleeps[0]).toBeCloseTo(30, 0);
+    expect(clock.sleeps[0]).toBeCloseTo(5, 0);
   });
 
   it('is ignored when the policy says so', async () => {
@@ -408,6 +408,14 @@ describe('the backoff schedule', () => {
 
   it('never sleeps for a negative time', () => {
     expect(backoffSecondsFor(RetryPolicy.default, 2, -10, 0)).toBe(0);
+  });
+
+  // Audit SDK-1: a gateway's 503 with Retry-After: 3600 must not hold a call for an hour.
+  it('honours a short Retry-After on a 5xx, but never past maxBackoffSeconds', () => {
+    expect(backoffSecondsFor(RetryPolicy.default, 2, 3, 0)).toBe(3);
+    expect(backoffSecondsFor(RetryPolicy.default, 2, 3600, 0)).toBe(
+      RetryPolicy.default.maxBackoffSeconds,
+    );
   });
 });
 
