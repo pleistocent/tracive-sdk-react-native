@@ -89,8 +89,9 @@ export class TraciveError extends Error {
   }
 
   /**
-   * A `rateLimited` error whose cause is the organisation's daily check quota
-   * (`daily_quota_exceeded`) rather than a short burst limit. Waiting a few seconds will not help;
+   * A `rateLimited` error whose cause is a spent daily allowance — the connection's daily quota,
+   * its account reads, or the sandbox org cap (`daily_quota_exceeded`) — rather than a per-second
+   * limit. Waiting a few seconds will not help;
    * `retryAfterSeconds` points at the reset at 00:00 UTC.
    */
   get isDailyQuotaExceeded(): boolean {
