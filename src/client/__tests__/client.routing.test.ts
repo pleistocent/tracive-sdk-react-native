@@ -240,10 +240,10 @@ describe('full detail and the cache', () => {
       {
         chronology: 'Asked for a deposit, then went quiet.',
         riskLevel: 3,
-        incidentDate: 'May 2026',
+        incidentDate: '2026-05',
       },
     ],
-    comments: [{ date: '2026-05-04', text: 'Same story here.', fromCredibleReport: true }],
+    comments: [{ date: '2026-05', text: 'Same story here.', fromCredibleReport: true }],
   });
 
   it('goes to the server under CACHE_FIRST even when a minimal result is cached', async () => {

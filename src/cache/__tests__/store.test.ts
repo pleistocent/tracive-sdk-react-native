@@ -66,15 +66,15 @@ describe('the data key', () => {
 describe('the persisted payload', () => {
   it('round-trips every field that survives caching', () => {
     const original = result({
-      firstReportOn: new Date(1_600_000_000_000),
-      lastReportOn: new Date(1_650_000_000_000),
+      firstReportOn: new Date(1_600_171_200_000), // 2020-09-15T12:00:00Z
+      lastReportOn: new Date(1_650_024_000_000), // 2022-04-15T12:00:00Z
       fraudAmount: { IDR: 5000 },
       tags: ['a', 'b'],
       disclaimer: 'text',
     });
     const restored = decodeCacheableResult(encodeCacheableResult(original));
-    expect(restored.firstReportOn?.getTime()).toBe(1_600_000_000_000);
-    expect(restored.lastReportOn?.getTime()).toBe(1_650_000_000_000);
+    expect(restored.firstReportOn?.getTime()).toBe(1_600_171_200_000);
+    expect(restored.lastReportOn?.getTime()).toBe(1_650_024_000_000);
     expect(restored.fraudAmount).toEqual({ IDR: 5000 });
     expect(restored.tags).toEqual(['a', 'b']);
     expect(restored.disclaimer).toBe('text');

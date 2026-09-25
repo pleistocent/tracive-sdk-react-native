@@ -26,7 +26,7 @@ function result(overrides?: Partial<CheckResult>): CheckResult {
     tags: ['x'],
     relatedScammerCount: 1,
     topChronologies: [{ chronology: 'text', riskLevel: 3 }],
-    comments: [{ date: '2026-01-01', text: 'note', fromCredibleReport: true }],
+    comments: [{ date: '2026-01', text: 'note', fromCredibleReport: true }],
     billing: { creditSource: 'USER', unitsCharged: 1 },
     disclaimer: 'legal text',
     origin: 'SERVER',

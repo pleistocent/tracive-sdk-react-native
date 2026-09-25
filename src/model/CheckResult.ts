@@ -11,7 +11,18 @@ export interface CheckResult {
   readonly reportTotal: number;
   readonly credibleReports: number;
   readonly ambiguousReports: number;
+  /**
+   * The month of the earliest matching report.
+   *
+   * Month precision only: the server always sends the 15th at 12:00 UTC, which falls in the same
+   * month in every time zone. Show the month and year (e.g. "Jul 2026"). Never show the day or
+   * compute with it, such as "3 days ago": an exact date could help identify the reporter.
+   */
   readonly firstReportOn?: Date;
+  /**
+   * The month of the most recent matching report. Month precision only, exactly like
+   * `firstReportOn`.
+   */
   readonly lastReportOn?: Date;
   /** Keyed by currency code, e.g. `{ IDR: 12500000 }`. */
   readonly fraudAmount: Readonly<Record<string, number>>;

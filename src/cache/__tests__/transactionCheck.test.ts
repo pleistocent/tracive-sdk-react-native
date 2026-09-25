@@ -37,7 +37,7 @@ function result(overrides?: Partial<CheckResult>): CheckResult {
     tags: ['investment'],
     relatedScammerCount: 4,
     topChronologies: [{ chronology: 'Promised 30% monthly returns.', riskLevel: 3 }],
-    comments: [{ date: '2026-01-01', text: 'Took my deposit.', fromCredibleReport: true }],
+    comments: [{ date: '2026-01', text: 'Took my deposit.', fromCredibleReport: true }],
     billing: { creditSource: 'USER', unitsCharged: 1 },
     disclaimer: 'legal text',
     origin: 'SERVER',

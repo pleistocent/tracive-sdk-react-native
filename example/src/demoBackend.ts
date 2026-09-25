@@ -121,7 +121,7 @@ export class DemoBackend implements HttpTransport {
       credibleReports: credible,
       ambiguousReports: reports - credible,
       ...(reports > 0
-        ? { firstReportOn: '2025-11-02T04:15:00Z', lastReportOn: '2026-07-14T09:30:00Z' }
+        ? { firstReportOn: '2025-11-15T12:00:00.000Z', lastReportOn: '2026-07-15T12:00:00.000Z' }
         : {}),
       fraudAmount: reports > 0 ? { IDR: reports * 1500000 } : {},
       tags: reports > 0 ? ['investment', 'social_engineering'] : [],
@@ -133,12 +133,12 @@ export class DemoBackend implements HttpTransport {
                 chronology:
                   'Promised 30% monthly returns, then stopped replying once the transfer cleared.',
                 riskLevel: 3,
-                incidentDate: '2026-06-01',
+                incidentDate: '2026-06',
               },
             ],
             comments: [
               {
-                date: '2026-06-02',
+                date: '2026-06',
                 text: 'Took my deposit and blocked me.',
                 fromCredibleReport: true,
               },
