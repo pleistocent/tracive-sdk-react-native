@@ -12,18 +12,17 @@ export interface CheckResult {
   readonly credibleReports: number;
   readonly ambiguousReports: number;
   /**
-   * The month of the earliest matching report.
-   *
-   * Month precision only: the server always sends the 15th at 12:00 UTC, which falls in the same
-   * month in every time zone. Show the month and year (e.g. "Jul 2026"). Never show the day or
-   * compute with it, such as "3 days ago": an exact date could help identify the reporter.
+   * The month of the earliest matching report, as `"YYYY-MM"` (e.g. `"2026-06"`). A display
+   * string, not an instant, like {@link Chronology.incidentDate}. Show the month and year only
+   * (e.g. "Jun 2026"): an exact date could help identify the reporter, so the server never sends
+   * one.
    */
-  readonly firstReportOn?: Date;
+  readonly firstReportOn?: string;
   /**
-   * The month of the most recent matching report. Month precision only, exactly like
-   * `firstReportOn`.
+   * The month of the most recent matching report, as `"YYYY-MM"`. Month and year only, exactly
+   * like `firstReportOn`.
    */
-  readonly lastReportOn?: Date;
+  readonly lastReportOn?: string;
   /** Keyed by currency code, e.g. `{ IDR: 12500000 }`. */
   readonly fraudAmount: Readonly<Record<string, number>>;
   readonly tags: readonly string[];

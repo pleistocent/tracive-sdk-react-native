@@ -66,20 +66,47 @@ describe('the data key', () => {
 describe('the persisted payload', () => {
   it('round-trips every field that survives caching', () => {
     const original = result({
-      firstReportOn: new Date(1_600_171_200_000), // 2020-09-15T12:00:00Z
-      lastReportOn: new Date(1_650_024_000_000), // 2022-04-15T12:00:00Z
+      firstReportOn: '2020-09',
+      lastReportOn: '2022-04',
       fraudAmount: { IDR: 5000 },
       tags: ['a', 'b'],
       disclaimer: 'text',
     });
     const restored = decodeCacheableResult(encodeCacheableResult(original));
-    expect(restored.firstReportOn?.getTime()).toBe(1_600_171_200_000);
-    expect(restored.lastReportOn?.getTime()).toBe(1_650_024_000_000);
+    expect(restored.firstReportOn).toBe('2020-09');
+    expect(restored.lastReportOn).toBe('2022-04');
     expect(restored.fraudAmount).toEqual({ IDR: 5000 });
     expect(restored.tags).toEqual(['a', 'b']);
     expect(restored.disclaimer).toBe('text');
     // A replay is always labelled as one.
     expect(restored.origin).toBe('CACHE');
+  });
+
+  it('reads report months from a row an earlier build stored as instants', () => {
+    const legacy = JSON.stringify({
+      found: true,
+      riskTier: 'HIGH',
+      firstReportOnMs: 1_600_171_200_000, // 2020-09-15T12:00:00Z
+      lastReportOnMs: 1_650_024_000_000, // 2022-04-15T12:00:00Z
+      fetchedAtMs: 0,
+    });
+    const restored = decodeCacheableResult(legacy);
+    expect(restored.firstReportOn).toBe('2020-09');
+    expect(restored.lastReportOn).toBe('2022-04');
+  });
+
+  it('trims a stored ISO date-time to its month and drops an unreadable one', () => {
+    const restored = decodeCacheableResult(
+      JSON.stringify({
+        found: true,
+        riskTier: 'HIGH',
+        firstReportOn: '2026-06-15T12:00:00.000Z',
+        lastReportOn: 'June 2026',
+        fetchedAtMs: 0,
+      }),
+    );
+    expect(restored.firstReportOn).toBe('2026-06');
+    expect(restored).not.toHaveProperty('lastReportOn');
   });
 
   it('reports payloadUnreadable on invalid JSON', () => {

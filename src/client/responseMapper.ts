@@ -5,6 +5,7 @@ import type { Comment } from '../model/Comment';
 import type { CreditsInfo } from '../model/CreditsInfo';
 import { isRiskTier, type RiskTier } from '../model/enums';
 import type { ProfileInfo } from '../model/ProfileInfo';
+import { toYearMonth } from '../model/yearMonth';
 import { TraciveError } from '../model/TraciveError';
 
 /**
@@ -113,8 +114,8 @@ export function decodeCheckResult(body: unknown, nowMs: number): CheckResult {
   }
 
   const checkId = asString(record.checkId);
-  const firstReportOn = asDate(record.firstReportOn);
-  const lastReportOn = asDate(record.lastReportOn);
+  const firstReportOn = toYearMonth(record.firstReportOn);
+  const lastReportOn = toYearMonth(record.lastReportOn);
   const chronologies = decodeChronologies(record.topChronologies);
   const comments = decodeComments(record.comments);
   const billing = decodeBilling(record.billing);

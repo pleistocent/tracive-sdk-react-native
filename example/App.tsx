@@ -439,6 +439,15 @@ function describeAuthResult(result: AuthResult): string {
   }
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Split rather than `new Date(month)`: a Date would need a day, and a local-zone parse can shift
+// the month.
+function formatMonth(month: string): string {
+  const [year, index] = month.split('-');
+  return `${MONTHS[Number(index) - 1] ?? index} ${year}`;
+}
+
 function Verdict({ result }: { result: CheckResult }) {
   return (
     <View style={styles.card}>
@@ -458,6 +467,13 @@ function Verdict({ result }: { result: CheckResult }) {
         label="Reports"
         value={`${result.reportTotal} total · ${result.credibleReports} credible · ${result.ambiguousReports} ambiguous`}
       />
+      {result.firstReportOn !== undefined && result.lastReportOn !== undefined ? (
+        <Fact
+          label="Reported"
+          value={`${formatMonth(result.firstReportOn)} – ${formatMonth(result.lastReportOn)}`}
+          note="Month and year only; the server never sends a day."
+        />
+      ) : null}
       {result.tags.length > 0 ? <Fact label="Tags" value={result.tags.join(', ')} /> : null}
       <Fact label="Check id" value={result.checkId ?? 'none — a cache hit performed no check'} />
       <Fact

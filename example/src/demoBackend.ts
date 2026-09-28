@@ -120,9 +120,7 @@ export class DemoBackend implements HttpTransport {
       reportTotal: reports,
       credibleReports: credible,
       ambiguousReports: reports - credible,
-      ...(reports > 0
-        ? { firstReportOn: '2025-11-15T12:00:00.000Z', lastReportOn: '2026-07-15T12:00:00.000Z' }
-        : {}),
+      ...(reports > 0 ? { firstReportOn: '2025-11', lastReportOn: '2026-07' } : {}),
       fraudAmount: reports > 0 ? { IDR: reports * 1500000 } : {},
       tags: reports > 0 ? ['investment', 'social_engineering'] : [],
       relatedScammerCount: reports > 0 ? 4 : 0,

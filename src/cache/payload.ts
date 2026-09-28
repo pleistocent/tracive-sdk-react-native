@@ -2,11 +2,13 @@ import type { Billing } from '../model/Billing';
 import { CachePolicy } from '../model/CachePolicy';
 import type { CheckResult } from '../model/CheckResult';
 import { isRiskTier } from '../model/enums';
+import { toYearMonth } from '../model/yearMonth';
 import { CheckCacheError } from './CheckCacheError';
 
 /**
- * The persisted projection of a result. Dates become epoch milliseconds, because a JSON date
- * string reintroduces a parsing question that a number does not have.
+ * The persisted projection of a result. Instants become epoch milliseconds, because a JSON date
+ * string reintroduces a parsing question that a number does not have. Report months are already
+ * plain `"YYYY-MM"` strings and are stored as such.
  */
 interface StoredResult {
   found: boolean;
@@ -14,6 +16,9 @@ interface StoredResult {
   reportTotal: number;
   credibleReports: number;
   ambiguousReports: number;
+  firstReportOn?: string;
+  lastReportOn?: string;
+  /** Written by builds that modelled report months as instants; read, never written. */
   firstReportOnMs?: number;
   lastReportOnMs?: number;
   fraudAmount: Record<string, number>;
@@ -30,10 +35,8 @@ export function encodeCacheableResult(result: CheckResult): string {
     reportTotal: result.reportTotal,
     credibleReports: result.credibleReports,
     ambiguousReports: result.ambiguousReports,
-    ...(result.firstReportOn !== undefined
-      ? { firstReportOnMs: result.firstReportOn.getTime() }
-      : {}),
-    ...(result.lastReportOn !== undefined ? { lastReportOnMs: result.lastReportOn.getTime() } : {}),
+    ...(result.firstReportOn !== undefined ? { firstReportOn: result.firstReportOn } : {}),
+    ...(result.lastReportOn !== undefined ? { lastReportOn: result.lastReportOn } : {}),
     fraudAmount: { ...result.fraudAmount },
     tags: [...result.tags],
     relatedScammerCount: result.relatedScammerCount,
@@ -41,6 +44,21 @@ export function encodeCacheableResult(result: CheckResult): string {
     fetchedAtMs: result.fetchedAt.getTime(),
   };
   return JSON.stringify(stored);
+}
+
+function optionalMonth<K extends 'firstReportOn' | 'lastReportOn'>(
+  key: K,
+  month: unknown,
+  legacyMs: unknown,
+): Partial<Record<K, string>> {
+  // The server's legacy instant was the 15th at 12:00 UTC, so the UTC month is the right one.
+  const legacy = typeof legacyMs === 'number' ? new Date(legacyMs) : undefined;
+  const value =
+    toYearMonth(month) ??
+    (legacy !== undefined && !Number.isNaN(legacy.getTime())
+      ? toYearMonth(legacy.toISOString())
+      : undefined);
+  return value !== undefined ? ({ [key]: value } as Partial<Record<K, string>>) : {};
 }
 
 export function decodeCacheableResult(json: string): CheckResult {
@@ -62,12 +80,8 @@ export function decodeCacheableResult(json: string): CheckResult {
     reportTotal: parsed.reportTotal ?? 0,
     credibleReports: parsed.credibleReports ?? 0,
     ambiguousReports: parsed.ambiguousReports ?? 0,
-    ...(parsed.firstReportOnMs !== undefined
-      ? { firstReportOn: new Date(parsed.firstReportOnMs) }
-      : {}),
-    ...(parsed.lastReportOnMs !== undefined
-      ? { lastReportOn: new Date(parsed.lastReportOnMs) }
-      : {}),
+    ...optionalMonth('firstReportOn', parsed.firstReportOn, parsed.firstReportOnMs),
+    ...optionalMonth('lastReportOn', parsed.lastReportOn, parsed.lastReportOnMs),
     fraudAmount: parsed.fraudAmount ?? {},
     tags: parsed.tags ?? [],
     relatedScammerCount: parsed.relatedScammerCount ?? 0,
