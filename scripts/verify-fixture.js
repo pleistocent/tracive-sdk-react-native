@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Pins the shared fixtures by content hash.
 //
-// Two fixtures, pinned the same way. The grammar one is the contract between the four SDKs and the
+// Three fixtures, pinned the same way. The grammar one is the contract between the four SDKs and the
 // server's key normalizer; the phone one is the contract between the four SDKs and the Tracive app's
-// own normalizer, which is what keeps app and SDK folding one person to one record key.
+// own normalizer, which is what keeps app and SDK folding one person to one record key. The bank-code
+// table is the server's own translation of a national bank code or BIC to a bankCode, and the SDK
+// embeds it (src/query/bankCodesJson.ts, which a test keeps identical to this file).
 //
 // Each file is vendored byte-identically into the Tracive SDKs for Kotlin, Flutter and Swift, so an
 // edit in one repository must fail loudly here rather than quietly teaching one SDK a different
@@ -18,9 +20,15 @@ import { readFileSync } from 'node:fs';
 const FIXTURES = [
   {
     path: 'test/fixtures/query-grammar-vectors.json',
-    sha256: 'f94bf48164c82bcc59fda30669d9d8c25dbc36ecc7ad93fcd7fb56ba2cdf2901',
-    bytes: 21662,
+    sha256: 'e63439047455e20e0952d75ad438ec8c7b2f80e8b1872c5e6c47628daab89bfe',
+    bytes: 27423,
     name: 'grammar',
+  },
+  {
+    path: 'test/fixtures/bank-codes.json',
+    sha256: '77eda1e45ec5d2894d9a676452f98470fa2c337d6ea12ab628ff176e62e740d5',
+    bytes: 22663,
+    name: 'bank-code',
   },
   {
     path: 'src/query/__tests__/phone-normalization-vectors.json',

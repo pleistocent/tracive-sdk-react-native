@@ -19,14 +19,32 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
       return TraciveQuery.phone(input.value as string);
     case 'EMAIL':
       return TraciveQuery.email(input.value as string);
-    case 'BANK':
-      return vector.input.isIban === true
-        ? TraciveQuery.iban(input.iban as string)
-        : TraciveQuery.bankAccount({
-            countryAlpha3: input.country as string,
-            bankCode: input.bankCode as string,
-            account: input.accountId as string,
-          });
+    case 'BANK': {
+      if (vector.input.isIban === true) return TraciveQuery.iban(input.iban as string);
+      const countryAlpha3 = input.country as string;
+      const account = input.accountId as string;
+      // Exactly one way of naming the bank, so a vector cannot be driven through a factory other
+      // than the one its input names.
+      const selectors = ['bankCode', 'bankShortCode', 'bic'].filter((name) => name in input);
+      if (selectors.length !== 1) {
+        throw new Error(`${vector.id} names the bank ${selectors.length} ways`);
+      }
+      if ('bankShortCode' in input) {
+        return TraciveQuery.bankAccount({
+          countryAlpha3,
+          bankShortCode: input.bankShortCode as string,
+          account,
+        });
+      }
+      if ('bic' in input) {
+        return TraciveQuery.bankAccount({ countryAlpha3, bic: input.bic as string, account });
+      }
+      return TraciveQuery.bankAccount({
+        countryAlpha3,
+        bankCode: input.bankCode as string,
+        account,
+      });
+    }
     case 'CRYPTO':
       return TraciveQuery.crypto({
         chain: input.chain as string,
@@ -44,17 +62,16 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
 
 describe('shared grammar fixture', () => {
   it('is the version this suite was written against', () => {
-    expect(fixture.version).toBe(5);
+    expect(fixture.version).toBe(6);
   });
 
   it('carries the expected number of vectors and rejections', () => {
     // Pinned so that a fixture update that silently drops a case cannot pass unnoticed.
-    expect(fixture.vectors).toHaveLength(34);
-    expect(fixture.rejected).toHaveLength(14);
+    expect(fixture.vectors).toHaveLength(42);
+    expect(fixture.rejected).toHaveLength(21);
     expect(fixture.documentIdGuard.cases).toHaveLength(9);
   });
 });
-
 
 describe('vectors', () => {
   it.each(fixture.vectors.map((vector) => [vector.id, vector] as const))(

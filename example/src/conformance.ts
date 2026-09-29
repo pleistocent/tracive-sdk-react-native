@@ -54,14 +54,22 @@ function buildQuery(type: string, input: Record<string, unknown>): TraciveQuery 
       return TraciveQuery.phone(text('value'));
     case 'EMAIL':
       return TraciveQuery.email(text('value'));
-    case 'BANK':
-      return input.isIban === true
-        ? TraciveQuery.iban(text('iban'))
-        : TraciveQuery.bankAccount({
-            countryAlpha3: text('country'),
-            bankCode: text('bankCode'),
-            account: text('accountId'),
-          });
+    case 'BANK': {
+      if (input.isIban === true) return TraciveQuery.iban(text('iban'));
+      const countryAlpha3 = text('country');
+      const account = text('accountId');
+      if ('bankShortCode' in input) {
+        return TraciveQuery.bankAccount({
+          countryAlpha3,
+          bankShortCode: text('bankShortCode'),
+          account,
+        });
+      }
+      if ('bic' in input) {
+        return TraciveQuery.bankAccount({ countryAlpha3, bic: text('bic'), account });
+      }
+      return TraciveQuery.bankAccount({ countryAlpha3, bankCode: text('bankCode'), account });
+    }
     case 'CRYPTO':
       return TraciveQuery.crypto({ chain: text('chain'), address: text('address') });
     case 'USERNAME':

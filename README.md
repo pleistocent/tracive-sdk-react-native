@@ -356,6 +356,20 @@ TraciveQuery.crypto({ chain: 'ETH', address: '0x52908400098527886E0F7030069857D2
 TraciveQuery.username({ platform: 'INSTAGRAM', handle: '@ScammerX' });
 ```
 
+`bankAccount` also takes the bank the way your own records may already name it — the national bank
+code or the BIC — in place of `bankCode`:
+
+```ts
+TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bankShortCode: '014', account: '3242424242' });
+TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bic: 'CENAIDJA', account: '3242424242' });
+```
+
+Both are translated to Tracive's `bankCode` through a table that ships inside the SDK, offline, so
+each builds exactly the key `bankCode: 'BCA'` builds and shares its cache entries. Leading zeros are
+optional (`14` finds `014`), and an 11-character BIC is looked up by its first 8. A code the table
+does not list for that country throws reason `unknown_bank_code` before any request, so it is never
+billed.
+
 Each factory folds its input into the exact key the server indexes — stripping formatting from a
 phone number, uppercasing an IBAN, lowercasing an EVM address but _not_ a base58 one — and **throws
 rather than returning a query that cannot match**. Multi-field factories take an object bag so two

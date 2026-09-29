@@ -14,6 +14,11 @@ export type QueryRejectionReason =
   | 'country_not_alpha3'
   | 'empty_account_id'
   | 'empty_bank_code'
+  /**
+   * The national bank code or BIC is malformed, or the SDK's bank-code table does not list it for
+   * that country. No key built from it could hit, so it is rejected locally and never billed.
+   */
+  | 'unknown_bank_code'
   /** An empty e-mail, and only that. Every other empty field names itself. */
   | 'empty_value'
   | 'empty_handle'

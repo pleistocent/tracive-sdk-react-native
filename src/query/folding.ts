@@ -28,6 +28,7 @@ const E164 = /^\+[1-9][0-9]{6,14}$/;
 const ALPHA3 = /^[A-Z]{3}$/;
 /** An EVM address. The lowercase `0x` prefix is load-bearing: `0X...` is deliberately not folded. */
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const BIC = /^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 
 /** trim -> remember a leading `+` -> strip non-ASCII-digits -> restore the `+`. */
 export function foldPhone(value: string): string {
@@ -90,6 +91,24 @@ export function foldBankAccount(value: string): string {
   const folded = foldedUpperCase(value).replace(/[\s-]/g, '');
   if (folded === '') throw new TraciveQueryError('empty_account_id');
   return folded;
+}
+
+/**
+ * NFC -> uppercase -> remove every `\s`, `.` and `-` anywhere: the form the bank-code table stores.
+ * Never throws for an empty result, which simply misses the table.
+ */
+export function foldBankShortCode(value: string): string {
+  return foldedUpperCase(normalizeNfc(value)).replace(/[\s.-]/g, '');
+}
+
+/**
+ * NFC -> uppercase -> remove every `\s`, then the 8- or 11-character BIC shape. Returns the first 8
+ * characters — the institution without its branch — or `undefined` when it is not a BIC. A `-` or
+ * `.` is not removed here, unlike in a short code.
+ */
+export function foldBic(value: string): string | undefined {
+  const folded = foldedUpperCase(normalizeNfc(value)).replace(/\s/g, '');
+  return BIC.test(folded) ? folded.slice(0, 8) : undefined;
 }
 
 /** NFC -> uppercase -> trim. */

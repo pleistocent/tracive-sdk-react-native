@@ -427,6 +427,9 @@ flowchart TD
   B1 --> B2["bankCode: NFC, uppercase, trim, then drop every underscore"]
   B2 --> B3["account: the same fold as an IBAN"]
   B3 --> BKey["BANK_ country, bank code and account, joined by underscores"]
+  B1 -->|"bankShortCode or bic in place of bankCode"| BT{"listed in the embedded bank-code table?"}
+  BT -->|"no"| BTErr["TraciveQueryError unknown_bank_code"]
+  BT -->|"yes: the table's bankCode"| B2
 
   Factory -->|"crypto"| C1["chain: NFC, uppercase, trim"]
   C1 --> C2{"is the address an EVM address?"}
@@ -467,6 +470,13 @@ Notes that are easy to get wrong, and that the shared fixture pins:
   be billed.
 - **`\D` is ASCII-only in JavaScript**, so an Arabic-Indic digit in a phone number is stripped,
   never converted.
+- **A national bank code or BIC is translated, never keyed as sent.** A short code is NFC, uppercase,
+  then stripped of `\s`, `.` and `-`, and an all-digit one also matches with its leading zeros
+  removed. A BIC is NFC, uppercase and stripped of `\s`, must have the 8- or 11-character BIC shape,
+  and is looked up by its first 8 within the given country only. The table is
+  `test/fixtures/bank-codes.json`, embedded as a string by `scripts/embed-bank-codes.js` and parsed
+  into `Map`s on first use — never at import, and never a plain object, so no inherited member can
+  answer a lookup.
 
 `isValidRecordKey` mirrors the server's own rule on the _folded_ key, because case mapping is not
 length-preserving. It rejects: the empty string, anything containing `/`, exactly `.`, exactly `..`,

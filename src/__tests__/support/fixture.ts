@@ -7,6 +7,7 @@ import { join } from 'node:path';
  * to prevent.
  */
 export const FIXTURE_PATH = join(process.cwd(), 'test', 'fixtures', 'query-grammar-vectors.json');
+export const BANK_CODES_PATH = join(process.cwd(), 'test', 'fixtures', 'bank-codes.json');
 
 export interface GrammarVector {
   readonly id: string;

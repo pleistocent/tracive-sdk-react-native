@@ -84,6 +84,10 @@ If your implementation disagrees with a vector, your implementation is wrong.
 `npm run fixture:verify` pins it by sha256. It is excluded from Prettier and from ESLint. A grammar
 change belongs in the Tracive API first, and then lands in all four SDKs together.
 
+`test/fixtures/bank-codes.json` is vendored and pinned the same way. The SDK embeds it as the
+generated `src/query/bankCodesJson.ts`, so after re-vendoring it run
+`node scripts/embed-bank-codes.js`; a test fails while the two differ by a single byte.
+
 ### And nothing may sit between a fixture value and the assertion that reads it
 
 Pinning the file is only half of it. The pin proves the _bytes_ did not move; it says nothing about

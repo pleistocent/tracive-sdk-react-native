@@ -10,6 +10,7 @@ import {
   foldPhone,
   foldPlatform,
 } from './folding';
+import { bankCodeByBic, bankCodeByShortCode } from './bankCodes';
 import { isValidRecordKey } from './recordKeyGuard';
 import { TraciveQueryError } from './TraciveQueryError';
 
@@ -56,9 +57,53 @@ export class TraciveQuery {
     countryAlpha3: string;
     bankCode: string;
     account: string;
+  }): TraciveQuery;
+  /**
+   * A domestic bank account, with the bank named by its national bank code, e.g. `014`.
+   *
+   * The code is translated to Tracive's `bankCode` through a table shipped inside the SDK, so
+   * `{ countryAlpha3: 'IDN', bankShortCode: '014' }` builds exactly the key `bankCode: 'BCA'` builds
+   * and shares its cache entries. Case, whitespace, `.` and `-` are ignored, and leading zeros are
+   * optional: `14` finds `014`. The country is checked first.
+   *
+   * @throws {TraciveQueryError} `unknown_bank_code` when the table does not list the code for that
+   *   country, before any request, so it is never billed.
+   */
+  static bankAccount(input: {
+    countryAlpha3: string;
+    bankShortCode: string;
+    account: string;
+  }): TraciveQuery;
+  /**
+   * A domestic bank account, with the bank named by its BIC, e.g. `CENAIDJA` or `CENAIDJAXXX`.
+   *
+   * Translated from the same table as `bankShortCode`, so this builds the key `bankCode` builds for
+   * that bank. An 11-character BIC is looked up by its first 8 (the branch is ignored), within the
+   * given country only; case and whitespace are ignored.
+   *
+   * @throws {TraciveQueryError} `unknown_bank_code` when the BIC is malformed or the table does not
+   *   list it for that country, before any request, so it is never billed.
+   */
+  static bankAccount(input: { countryAlpha3: string; bic: string; account: string }): TraciveQuery;
+  static bankAccount(input: {
+    countryAlpha3: string;
+    bankCode?: string;
+    bankShortCode?: string;
+    bic?: string;
+    account: string;
   }): TraciveQuery {
+    const { bankCode: given, bankShortCode, bic } = input;
+    // Only reachable from untyped JavaScript. Picking one of two codes could build the key of a bank
+    // the caller did not mean, and that miss is billed.
+    if ([given, bankShortCode, bic].filter((selector) => selector != null).length !== 1) {
+      throw new TypeError('bankAccount takes exactly one of bankCode, bankShortCode or bic');
+    }
     const country = foldCountryAlpha3(input.countryAlpha3);
-    const bankCode = foldBankCode(input.bankCode);
+    let resolved = given;
+    if (bankShortCode != null) resolved = bankCodeByShortCode(country, bankShortCode);
+    if (bic != null) resolved = bankCodeByBic(country, bic);
+    if (resolved === undefined) throw new TraciveQueryError('unknown_bank_code');
+    const bankCode = foldBankCode(resolved);
     const account = foldBankAccount(input.account);
     return new TraciveQuery('BANK', assertValidRecordKey(`BANK_${country}_${bankCode}_${account}`));
   }

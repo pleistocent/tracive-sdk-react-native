@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A bank account can be named by its national bank code or its BIC.**
+  `TraciveQuery.bankAccount` takes `bankShortCode: '014'` or `bic: 'CENAIDJA'` in place of
+  `bankCode` and translates the code your records already hold to Tracive's `bankCode` through a
+  table shipped inside the SDK, so it builds exactly the key `bankCode: 'BCA'` builds and hits the
+  same cache entries. It works offline, and the table is parsed once, on first use, not at
+  import. A code the table does not list for that country throws the new reason `unknown_bank_code`
+  before any request, so it is never billed; an exhaustive `switch` over `QueryRejectionReason` gains
+  an arm. The grammar fixture moves to v6.
+
 - **Three newer server error codes now have a type.** `user_credit_not_permitted` and
   `translation_not_permitted` (both 403 on a check) map to the new kinds `userCreditNotPermitted`
   and `translationNotPermitted` instead of `unknown`. `daily_quota_exceeded` stays `rateLimited`,
