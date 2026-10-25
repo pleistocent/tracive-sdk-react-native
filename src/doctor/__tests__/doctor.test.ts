@@ -21,7 +21,7 @@ const GOOD_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
     <intent>
       <action android:name="android.intent.action.VIEW" />
       <data android:scheme="tracive" />
-      <data android:scheme="tracivedev" />
+      <data android:scheme="tracivesandbox" />
     </intent>
     <intent>
       <action android:name="android.intent.action.VIEW" />
@@ -43,7 +43,7 @@ const GOOD_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 const GOOD_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
   <key>LSApplicationQueriesSchemes</key>
-  <array><string>tracive</string><string>tracivedev</string></array>
+  <array><string>tracive</string><string>tracivesandbox</string></array>
 </dict></plist>`;
 
 const GOOD_ENTITLEMENTS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -89,7 +89,7 @@ describe('the Android manifest check', () => {
     expect(exitCodeFor(findings)).toBe(1);
     // The finding carries the exact block to paste, schemes and all.
     expect(findings[0]?.fix).toContain('android:scheme="tracive"');
-    expect(findings[0]?.fix).toContain('android:scheme="tracivedev"');
+    expect(findings[0]?.fix).toContain('android:scheme="tracivesandbox"');
     // Never a <package> entry: it would name one build, so it cannot follow the environment the
     // way the probe does, and it would land in the host's shipped manifest.
     expect(findings[0]?.fix).not.toContain('<package');
@@ -114,11 +114,11 @@ describe('the Android manifest check', () => {
     // "not installed" for a sandbox build that is installed, and the user is sent to an install
     // page for an app they are holding. Without this test the doctor's sandbox check was
     // vacuous — restricting it to the production scheme alone left every doctor test green.
-    const manifest = GOOD_MANIFEST.replace(/<data android:scheme="tracivedev" \/>/, '');
+    const manifest = GOOD_MANIFEST.replace(/<data android:scheme="tracivesandbox" \/>/, '');
     const findings = checkAndroidManifest(manifest, REDIRECT);
     const missing = findings.find((f) => f.code === 'missing_query_declaration');
     expect(missing).toBeDefined();
-    expect(missing?.fix).toContain('tracivedev');
+    expect(missing?.fix).toContain('tracivesandbox');
     expect(missing?.fix).not.toContain('android:scheme="tracive"');
   });
 

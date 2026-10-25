@@ -16,7 +16,7 @@
     </intent>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
-      <data android:scheme="tracivedev"/>
+      <data android:scheme="tracivesandbox"/>
     </intent>
   </queries>
   <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false">

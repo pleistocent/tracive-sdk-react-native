@@ -85,7 +85,7 @@ export const TRACIVE_APP_SCHEME = 'tracive';
  * probe for one cannot see the other. A host manifest and `Info.plist` must therefore declare BOTH
  * schemes, or switching to sandbox silently answers "not installed" for every device.
  */
-export const TRACIVE_SANDBOX_APP_SCHEME = 'tracivedev';
+export const TRACIVE_SANDBOX_APP_SCHEME = 'tracivesandbox';
 
 /** Every scheme a host manifest must declare for the probe to answer. */
 export const TRACIVE_APP_SCHEMES = [TRACIVE_APP_SCHEME, TRACIVE_SANDBOX_APP_SCHEME] as const;
@@ -101,8 +101,8 @@ export const TRACIVE_APP_SCHEMES = [TRACIVE_APP_SCHEME, TRACIVE_SANDBOX_APP_SCHE
  * answered "not installed" on every Android device including the ones holding the app.
  *
  * It works now because the Tracive app gained a scheme-only intent-filter, verified on a device:
- * `tracivedev://` went from "unable to resolve Intent" to starting the app. So this function and
- * that filter are one contract — neither is correct alone.
+ * the bare-scheme probe went from "unable to resolve Intent" to starting the app. So this function
+ * and that filter are one contract — neither is correct alone.
  *
  * iOS was never affected: `canOpenURL` there is answered by LaunchServices from the installed app's
  * `CFBundleURLTypes` and inspects only the scheme.
