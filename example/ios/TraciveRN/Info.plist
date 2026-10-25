@@ -44,7 +44,7 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tracive</string>
-		<string>tracivedev</string>
+		<string>tracivesandbox</string>
 	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>

@@ -72,6 +72,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Breaking
 
+- **Sandbox now probes for the Tracive sandbox app, URL scheme `tracivesandbox`.** It probed
+  `tracivedev://`, which now belongs to an internal build that claims no authorize host, so it can
+  never answer a sandbox consent. The Expo config plugin and `npx tracive-doctor` follow the new
+  scheme. If you wrote the `<queries>` block or `LSApplicationQueriesSchemes` by hand, replace
+  `tracivedev` with `tracivesandbox`; with the plugin, run prebuild again. Production,
+  `TraciveEnvironment.custom` and the sandbox API and authorize hosts are unchanged.
+
 - **`firstReportOn` and `lastReportOn` are now `"YYYY-MM"` strings, not `Date`s.** The Tracive API
   sends them as `"2026-06"`, the same shape as `Chronology.incidentDate` and `Comment.date`, so the
   exact report date never leaves the server. Show month and year only (e.g. "Jun 2026") — never a

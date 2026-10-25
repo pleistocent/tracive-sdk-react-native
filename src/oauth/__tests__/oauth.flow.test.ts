@@ -652,7 +652,7 @@ describe('the SDK constants', () => {
     // registers no custom-scheme host named `authorize`, so the old probe answered
     // "not installed" on every Android device, including the ones holding the app.
     expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.production)).toBe('tracive://');
-    expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.sandbox)).toBe('tracivedev://');
+    expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.sandbox)).toBe('tracivesandbox://');
     // A custom base URL is a partner proxy; the app on the device is still the production one.
     expect(TraciveOAuth.appPresenceProbeUrl(TraciveEnvironment.custom('https://p.test/v1'))).toBe(
       'tracive://',

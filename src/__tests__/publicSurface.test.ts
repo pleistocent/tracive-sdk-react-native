@@ -140,7 +140,7 @@ describe('the Tracive app’s URL schemes', () => {
     // The doctor certifies a manifest against these, the Expo plugin writes one from them, and
     // the flow probes them at runtime. A value edited in one place and not the others makes the
     // doctor certify a manifest the SDK will not accept, and nothing about that points at why.
-    expect([...TRACIVE_APP_SCHEMES]).toEqual(['tracive', 'tracivedev']);
+    expect([...TRACIVE_APP_SCHEMES]).toEqual(['tracive', 'tracivesandbox']);
     expect([...doctorSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
     expect([...pluginSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
   });
