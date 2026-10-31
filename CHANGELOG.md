@@ -118,6 +118,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`normalizePhoneNumber` now folds a number typed the local way to the same key as its
+  `+<code>` form in eight more countries.** Hungary's trunk prefix is `06`, so `06 30 123 4567` gave
+  `+366301234567` while `+36 30 123 4567` gave `+36301234567`: one person, two record keys. The
+  trunk `8` of Belarus (`8 029 …`), Turkmenistan, Tajikistan and Uzbekistan, and the `8` Lithuania
+  used until March 2024, were kept the same way. The 8 is dropped only when exactly a national
+  number's length follows it, because some national numbers start with 8 themselves (Uzbek `88`
+  mobiles, Lithuanian `800` freephone). **The output changes for Côte d'Ivoire, Benin and the
+  Republic of the Congo:** the leading 0 is part of the number there and is now kept
+  (`+2250712345678`, not `+225712345678`), which is the E.164 form their regulators publish and the
+  one a contact card or another E.164 source holds. Every rule was checked against the numbering
+  plan the country filed with the ITU. The phone fixture moves to v8 with 18 new vectors and one new
+  rejection.
+
 - **A 429 is no longer retried.** `credits()`, `profile()` and a check carrying your
   `idempotencyKey` used to sleep for the `Retry-After` and send again, up to three times. A spent
   daily quota answers with a `Retry-After` that runs to the next UTC midnight, so one call could

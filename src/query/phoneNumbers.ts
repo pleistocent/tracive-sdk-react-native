@@ -2,6 +2,19 @@ import { countryFromAlpha3 } from './countries';
 import { TraciveQueryError } from './TraciveQueryError';
 
 /**
+ * Countries whose trunk prefix is 8, with how many digits follow that 8. Belarus counts the 0 it
+ * writes after the 8 (`8 029 123 45 67`); the leading-zero strip removes it afterwards. Source: ITU
+ * "Dialling procedures" and each country's numbering plan filed with the ITU.
+ */
+const DIGITS_AFTER_TRUNK_8: Readonly<Record<string, number>> = {
+  '375': 10, // Belarus
+  '370': 8, // Lithuania
+  '992': 9, // Tajikistan
+  '993': 8, // Turkmenistan
+  '998': 9, // Uzbekistan
+};
+
+/**
  * Turns a phone number written the way people in a country actually write it into E.164.
  *
  * `TraciveQuery.phone` deliberately refuses a local format such as `081234567891`, and says why: the
@@ -70,6 +83,34 @@ export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: str
     case '39':
     case '378':
       break;
+    // Côte d'Ivoire, Benin and the Republic of the Congo have no trunk prefix, and their regulators
+    // require the 0 after the country code (+225 07…, +229 01…, +242 06…).
+    case '225':
+    case '229':
+    case '242':
+      break;
+    // Hungary: the trunk prefix is 06. A national number may start with 6 (Szeged is 62), so the
+    // pair is dropped, never a 0 and then a 6 on its own.
+    case '36':
+      if (digits.startsWith('06')) digits = digits.slice(2);
+      digits = withoutLeadingZeros(digits);
+      break;
+    // A trunk 8 (Lithuania's until March 2024, 0 since). Some national numbers start with 8
+    // themselves (Belarusian 801 and Lithuanian 800 freephone, Uzbek 88 mobile), so the 8 goes only
+    // when exactly a national number's length follows it.
+    case '375':
+    case '370':
+    case '992':
+    case '993':
+    case '998':
+      if (
+        digits.startsWith('8') &&
+        digits.length === (DIGITS_AFTER_TRUNK_8[dialCode] as number) + 1
+      ) {
+        digits = digits.slice(1);
+      }
+      digits = withoutLeadingZeros(digits);
+      break;
     // North America: trunk prefix 1, local numbers are 10 digits.
     case '1':
       if (digits.startsWith('1') && digits.length === 11) digits = digits.slice(1);
@@ -82,10 +123,10 @@ export function normalizePhoneNumber(countryOrDialCode: string, phoneNumber: str
 
   // A number that is nothing but zeros is refused here, not left to `phone()`. For most countries the
   // trunk-prefix rule strips the zeros away and the emptiness check above catches it — but Italy, San
-  // Marino, North America and Russia do not strip leading zeros, so `+390000000` survived, matched
-  // E.164, reached the network and was billed for a miss it could only ever be. Refusing it here also
-  // makes the reason the same in every country instead of `empty_phone_number` in Indonesia and
-  // `not_e164` in Italy for the identical input.
+  // Marino, Côte d'Ivoire, Benin, the Congo, North America and Russia do not strip leading zeros, so
+  // `+390000000` survived, matched E.164, reached the network and was billed for a miss it could
+  // only ever be. Refusing it here also makes the reason the same in every country instead of
+  // `empty_phone_number` in Indonesia and `not_e164` in Italy for the identical input.
   if (digits === '' || /^0+$/.test(digits)) throw new TraciveQueryError('empty_phone_number');
   return `+${dialCode}${digits}`;
 }
