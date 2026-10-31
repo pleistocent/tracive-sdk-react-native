@@ -45,6 +45,28 @@ describe('normalizePhoneNumber', () => {
     }
   });
 
+  // Every dial code and every length up to 17: a number typed without '+' that starts with its own
+  // dial code keeps those digits only as the fixture's nationalNumberLengths says. The 5s keep trunk
+  // rules out of it.
+  it('reads a number starting with its dial code by the lengths table', () => {
+    const lengths: Record<string, number[]> = fixture.nationalNumberLengths;
+    expect(Object.keys(lengths).length).toBeGreaterThan(0);
+    const dialCodes = new Set(fixture.countries.map((c) => c.dialCode));
+    dialCodes.delete('1');
+    for (const dialCode of dialCodes) {
+      const national = lengths[dialCode] ?? [];
+      for (let length = dialCode.length + 1; length <= 17; length += 1) {
+        const rest = '5'.repeat(length - dialCode.length);
+        const typed = dialCode + rest;
+        const keep = national.includes(length) && !national.includes(length - dialCode.length);
+        expect([typed, normalizePhoneNumber(dialCode, typed)]).toEqual([
+          typed,
+          `+${dialCode}${keep ? typed : rest}`,
+        ]);
+      }
+    }
+  });
+
   it('looks alpha-3 up ignoring case and surrounding space', () => {
     expect(countryFromAlpha3('idn')?.alpha3).toBe('IDN');
     expect(countryFromAlpha3('  IDN  ')?.alpha3).toBe('IDN');
