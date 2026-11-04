@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-11-04
+
+First public release, on npm as `@tracive/sdk-react-native`. phase 1: OAuth mode only, against the
+live Tracive Open API.
+
+The entry below was a snapshot that was never published. This release is that snapshot plus
+everything listed here, so the **Breaking** items are changes from the snapshot, not from anything
+anyone could have installed.
+
 ### Added
 
 - **A bank account can be named by its national bank code or its BIC.**
@@ -761,9 +770,9 @@ records what a reader of the 0.1.0 notes above would otherwise be misled by.
   scans. It could not fail in CI before. `npm run verify` and CI also run a runtime-dependency
   audit.
 
-## [0.1.0]
+## Pre-release snapshot (never published)
 
-First implementation. Not published to npm yet, and the Tracive API is not live yet.
+First implementation. Not published to npm, and written before the Tracive API was live.
 
 ### Added
 
@@ -793,3 +802,6 @@ First implementation. Not published to npm yet, and the Tracive API is not live 
 - ESM only. There is no CommonJS build.
 - No native code, no autolinking, no podspec.
 - There is no API key in this surface, in either mode.
+
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.1.0
