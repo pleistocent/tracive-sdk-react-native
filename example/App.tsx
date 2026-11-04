@@ -1,5 +1,5 @@
 /**
- * A runnable example for `@tracive/sdk-react-native`.
+ * A runnable example for `@pleistocent/tracive-sdk-react-native`.
  *
  * WHAT IT DEMONSTRATES, and why each part is here:
  *
@@ -47,13 +47,13 @@ import {
   type CheckResult,
   type OAuthConfiguration,
   type RiskTier,
-} from '@tracive/sdk-react-native';
+} from '@pleistocent/tracive-sdk-react-native';
 import {
   expoRandom,
   expoSecurePendingAuthorizationStore,
   expoSecureTokenStore,
   openExpoCheckCache,
-} from '@tracive/sdk-react-native/expo';
+} from '@pleistocent/tracive-sdk-react-native/expo';
 
 import { DemoBackend } from './src/demoBackend';
 import { runConformance, type ConformanceReport } from './src/conformance';

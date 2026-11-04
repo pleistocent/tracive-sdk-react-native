@@ -37,7 +37,7 @@ flowchart TD
     Redirect["Your App Link / Universal Link host"]
   end
 
-  subgraph SDK["@tracive/sdk-react-native"]
+  subgraph SDK["@pleistocent/tracive-sdk-react-native"]
     Query["TraciveQuery"]
     Client["TraciveClient"]
     OAuth["TraciveOAuth"]

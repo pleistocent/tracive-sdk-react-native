@@ -20,7 +20,11 @@
  * rejections and the nine `documentIdGuard` cases, which drive the internal record-key guard
  * directly; those stay Jest-only and are reported as skipped rather than silently dropped.
  */
-import { normalizePhoneNumber, TraciveQuery, isTraciveQueryError } from '@tracive/sdk-react-native';
+import {
+  normalizePhoneNumber,
+  TraciveQuery,
+  isTraciveQueryError,
+} from '@pleistocent/tracive-sdk-react-native';
 
 import grammarFixture from '../../test/fixtures/query-grammar-vectors.json';
 import phoneFixture from '../../src/query/__tests__/phone-normalization-vectors.json';

@@ -17,7 +17,7 @@
     "doctor": "node ../bin/tracive-doctor.js --redirect-uri https://example.tracive.id/oauth/callback"
   },
   "dependencies": {
-    "@tracive/sdk-react-native": "file:..",
+    "@pleistocent/tracive-sdk-react-native": "file:..",
     "expo": "~55.0.31",
     "expo-application": "~55.0.19",
     "expo-crypto": "~55.0.0",

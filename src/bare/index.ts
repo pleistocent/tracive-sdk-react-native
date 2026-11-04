@@ -1,5 +1,5 @@
 /**
- * Adapters for a bare React Native app, behind the `@tracive/sdk-react-native/bare` subpath.
+ * Adapters for a bare React Native app, behind the `@pleistocent/tracive-sdk-react-native/bare` subpath.
  *
  * Both imports are OPTIONAL peer dependencies; see the note at the top of the Expo adapter for
  * why there is no runtime auto-detection.

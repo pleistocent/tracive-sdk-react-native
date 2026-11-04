@@ -199,7 +199,7 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
 
     const activity = AndroidConfig.Manifest.getMainActivityOrThrow(modConfig.modResults);
     for (const warning of applyTraciveLaunchMode(activity)) {
-      WarningAggregator.addWarningAndroid('@tracive/sdk-react-native', warning);
+      WarningAggregator.addWarningAndroid('@pleistocent/tracive-sdk-react-native', warning);
     }
 
     const filters = (activity['intent-filter'] ?? []) as Record<string, unknown>[];

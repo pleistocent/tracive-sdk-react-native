@@ -25,7 +25,7 @@ Add the config plugin and you are done — it writes every item below.
   "expo": {
     "plugins": [
       [
-        "@tracive/sdk-react-native/app.plugin.js",
+        "@pleistocent/tracive-sdk-react-native/app.plugin.js",
         { "redirectUri": "https://your.app/oauth/callback" }
       ]
     ]

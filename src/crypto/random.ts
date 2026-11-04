@@ -10,7 +10,7 @@ const CSPRNG_UNAVAILABLE_MESSAGE =
   'Tracive needs a cryptographically secure random source for PKCE and cache encryption, and ' +
   'this React Native runtime does not provide globalThis.crypto.getRandomValues. Install ONE of:\n' +
   '  - Expo:    npx expo install expo-crypto, then pass `random: expoRandom` (from\n' +
-  '             @tracive/sdk-react-native/expo) to TraciveClient, TraciveOAuth and openExpoCheckCache.\n' +
+  '             @pleistocent/tracive-sdk-react-native/expo) to TraciveClient, TraciveOAuth and openExpoCheckCache.\n' +
   '  - Bare RN: npm i react-native-get-random-values, then `import ' +
   "'react-native-get-random-values'` at the very top of your entry file.\n" +
   'Alternatively pass your own `random` implementation to TraciveClient.';

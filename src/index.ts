@@ -1,5 +1,5 @@
 /**
- * `@tracive/sdk-react-native` — the entire public surface.
+ * `@pleistocent/tracive-sdk-react-native` — the entire public surface.
  *
  * Anything not re-exported here is internal and may change without a major version.
  *

@@ -27,11 +27,11 @@ A constructor must not silently open a database file and a keystore entry, so op
 cache is one explicit line:
 
 ```ts
-import { openExpoCheckCache } from '@tracive/sdk-react-native/expo';
+import { openExpoCheckCache } from '@pleistocent/tracive-sdk-react-native/expo';
 const cache = await openExpoCheckCache();
 
 // or, bare React Native:
-import { openBareCheckCache } from '@tracive/sdk-react-native/bare';
+import { openBareCheckCache } from '@pleistocent/tracive-sdk-react-native/bare';
 const cache = await openBareCheckCache();
 
 const client = new TraciveClient({ mode, cache });

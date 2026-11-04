@@ -1,4 +1,4 @@
-# `@tracive/sdk-react-native` example
+# `@pleistocent/tracive-sdk-react-native` example
 
 A runnable app for the SDK in the directory above it, on Android and iOS.
 
@@ -12,7 +12,7 @@ npm run android      # or: npm run ios — the demo flavor
 ```
 
 Both scripts rebuild the SDK first (`npm --prefix .. run build`), so the app always runs the
-working tree rather than a published version. `@tracive/sdk-react-native` is a `file:..`
+working tree rather than a published version. `@pleistocent/tracive-sdk-react-native` is a `file:..`
 dependency; nothing here is fetched from npm.
 
 ## What you should see
@@ -98,7 +98,7 @@ grep -rn "TODO(partner)" example
 
 ```json
 [
-  "@tracive/sdk-react-native/app.plugin.js",
+  "@pleistocent/tracive-sdk-react-native/app.plugin.js",
   { "redirectUri": "https://example.tracive.id/oauth/callback" }
 ]
 ```
@@ -127,7 +127,7 @@ fail: delete the `autoVerify` intent-filter from the manifest and it exits 1 nam
   be a version bump and a `pod install`.
 - Android: an emulator or device on API 24+. iOS: a simulator on 15.1+.
 - The example uses `expo-secure-store`, `expo-sqlite` and `expo-crypto` — the three optional peer
-  dependencies behind `@tracive/sdk-react-native/expo`. It does **not** use
+  dependencies behind `@pleistocent/tracive-sdk-react-native/expo`. It does **not** use
   `@op-engineering/op-sqlite` or `react-native-keychain`, so the `/bare` subpath is not exercised
   here.
 
@@ -139,4 +139,4 @@ fail: delete the `autoVerify` intent-filter from the manifest and it exits 1 nam
   device, so the demo plants a grant in the secure store rather than driving `authorize()`. The
   stores, the refresh path and the 401 replay are real — press "Expire the grant, then check". The
   sandbox and production flavors drive `authorize()` and the redirect for real.
-- **`@tracive/sdk-react-native/bare`.** See above.
+- **`@pleistocent/tracive-sdk-react-native/bare`.** See above.

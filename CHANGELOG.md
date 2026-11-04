@@ -8,8 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0] — 2026-11-04
 
-First public release, on npm as `@tracive/sdk-react-native`. phase 1: OAuth mode only, against the
-live Tracive Open API.
+First public release, on npm as `@pleistocent/tracive-sdk-react-native`. phase 1: OAuth mode only,
+against the live Tracive Open API. Earlier drafts of these docs named the package
+`@tracive/sdk-react-native`; that name was never published, and imports use the new one.
 
 The entry below was a snapshot that was never published. This release is that snapshot plus
 everything listed here, so the **Breaking** items are changes from the snapshot, not from anything

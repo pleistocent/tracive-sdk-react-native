@@ -1,5 +1,5 @@
 import * as Application from 'expo-application';
-import { TraciveEnvironment } from '@tracive/sdk-react-native';
+import { TraciveEnvironment } from '@pleistocent/tracive-sdk-react-native';
 
 /**
  * How this build of the example runs — an Android product flavor and an iOS scheme each:

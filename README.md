@@ -1,4 +1,4 @@
-# @tracive/sdk-react-native
+# @pleistocent/tracive-sdk-react-native
 
 Check a phone number, e-mail address, bank account, IBAN, crypto address or social handle against
 Tracive's community scam reports, from a React Native or Expo app.
@@ -43,7 +43,7 @@ is broken":
 ## Install
 
 ```sh
-npm install @tracive/sdk-react-native
+npm install @pleistocent/tracive-sdk-react-native
 ```
 
 That is the whole install. The package is pure TypeScript and **ships no native code at all** — no
@@ -78,7 +78,7 @@ npx expo install expo-crypto
 ```
 
 ```ts
-import { expoRandom, openExpoCheckCache } from '@tracive/sdk-react-native/expo';
+import { expoRandom, openExpoCheckCache } from '@pleistocent/tracive-sdk-react-native/expo';
 
 const cache = await openExpoCheckCache({ random: expoRandom });
 const oauth = new TraciveOAuth({ mode: config, /* … */ random: expoRandom });
@@ -132,8 +132,8 @@ npm i @op-engineering/op-sqlite react-native-keychain
 ```
 
 ```ts
-import { openExpoCheckCache } from '@tracive/sdk-react-native/expo';
-// or: import { openBareCheckCache } from '@tracive/sdk-react-native/bare';
+import { openExpoCheckCache } from '@pleistocent/tracive-sdk-react-native/expo';
+// or: import { openBareCheckCache } from '@pleistocent/tracive-sdk-react-native/bare';
 
 const cache = await openExpoCheckCache();
 ```
@@ -158,12 +158,12 @@ for a shipping app:
 The secure store you already installed for the cache above is all either one needs:
 
 ```ts
-import { TraciveClient, TraciveMode, TraciveOAuth } from '@tracive/sdk-react-native';
+import { TraciveClient, TraciveMode, TraciveOAuth } from '@pleistocent/tracive-sdk-react-native';
 import {
   expoRandom,
   expoSecurePendingAuthorizationStore,
   expoSecureTokenStore,
-} from '@tracive/sdk-react-native/expo';
+} from '@pleistocent/tracive-sdk-react-native/expo';
 
 // `config` is your OAuthConfiguration — clientId, redirectUri, partnerUserId and scopes. See
 // "Use it" below; every value you have to supply there is marked `TODO(partner)`.
@@ -181,7 +181,7 @@ const client = new TraciveClient({
 ```
 
 Bare React Native is the same shape with `keychainTokenStore()` and
-`keychainPendingAuthorizationStore()` from `@tracive/sdk-react-native/bare`. Neither store is the
+`keychainPendingAuthorizationStore()` from `@pleistocent/tracive-sdk-react-native/bare`. Neither store is the
 default because this package depends on no storage library — both adapters sit behind optional peer
 dependencies — and picking one at runtime would turn a missing dependency into a crash report nobody
 can read. [docs/oauth.md](docs/oauth.md) has the full wiring, including what a hand-built
@@ -209,7 +209,7 @@ plugin:
   "expo": {
     "plugins": [
       [
-        "@tracive/sdk-react-native/app.plugin.js",
+        "@pleistocent/tracive-sdk-react-native/app.plugin.js",
         { "redirectUri": "https://your.app/oauth/callback" }
       ]
     ]
@@ -261,7 +261,7 @@ import {
   TraciveScopes,
   isTraciveQueryError,
   isTraciveError,
-} from '@tracive/sdk-react-native';
+} from '@pleistocent/tracive-sdk-react-native';
 
 const client = new TraciveClient({
   mode: TraciveMode.oauth({

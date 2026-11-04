@@ -39,7 +39,7 @@ request rather than granting a narrower one, so a single wrong character is not 
 it is an integration that cannot authorize at all.
 
 ```ts
-import { TraciveScopes, TraciveMode } from '@tracive/sdk-react-native';
+import { TraciveScopes, TraciveMode } from '@pleistocent/tracive-sdk-react-native';
 
 TraciveMode.oauth({
   // TODO(partner): your own values. `partnerUserId` is required and must not be blank.
@@ -142,17 +142,22 @@ Both adapter subpaths ship a store that closes it, backed by the same platform s
 tokens. The record holds a live PKCE verifier, so that is where it belongs.
 
 ```ts
-import { TraciveClient, TraciveMode, TraciveOAuth, TraciveScopes } from '@tracive/sdk-react-native';
+import {
+  TraciveClient,
+  TraciveMode,
+  TraciveOAuth,
+  TraciveScopes,
+} from '@pleistocent/tracive-sdk-react-native';
 // Expo — needs expo-secure-store.
 import {
   expoSecurePendingAuthorizationStore,
   expoSecureTokenStore,
-} from '@tracive/sdk-react-native/expo';
+} from '@pleistocent/tracive-sdk-react-native/expo';
 // Bare React Native — needs react-native-keychain:
 // import {
 //   keychainPendingAuthorizationStore,
 //   keychainTokenStore,
-// } from '@tracive/sdk-react-native/bare';
+// } from '@pleistocent/tracive-sdk-react-native/bare';
 
 const config = {
   // TODO(partner): your own values. `partnerUserId` is required and must not be blank.

@@ -1,5 +1,5 @@
 /**
- * Adapters for an Expo app, behind the `@tracive/sdk-react-native/expo` subpath.
+ * Adapters for an Expo app, behind the `@pleistocent/tracive-sdk-react-native/expo` subpath.
  *
  * Every import below is an OPTIONAL peer dependency. Importing this subpath without the peer
  * installed fails with a module-not-found error naming the missing package, which is correct and

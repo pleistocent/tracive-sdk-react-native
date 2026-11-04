@@ -14,7 +14,11 @@
  * contracts and is deliberately crude about everything else. The sibling Flutter and Swift SDKs
  * ship the same fake for the same reason.
  */
-import type { HttpRequest, HttpResponse, HttpTransport } from '@tracive/sdk-react-native';
+import type {
+  HttpRequest,
+  HttpResponse,
+  HttpTransport,
+} from '@pleistocent/tracive-sdk-react-native';
 
 export interface DemoBackendOptions {
   /** Makes the loading state visible. */

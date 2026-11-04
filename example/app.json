@@ -17,7 +17,7 @@
     },
     "plugins": [
       [
-        "@tracive/sdk-react-native/app.plugin.js",
+        "@pleistocent/tracive-sdk-react-native/app.plugin.js",
         { "redirectUri": "https://example.tracive.id/oauth/callback" }
       ]
     ],
