@@ -351,6 +351,9 @@ export class TraciveClient {
    *
    * @throws {TypeError} when the arguments are not what the types say (a date not written
    *   `YYYY-MM-DD` or naming no real day, an attachment without bytes), before anything is opened.
+   *
+   * To let the user report without leaving your app, use `tracive-sdk-extended`. This call hands
+   * the report to the Tracive app.
    */
   async openReportForm(
     query: TraciveQuery,

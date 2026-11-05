@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-07
+
+### Documentation
+
+- `openReportForm` points at `tracive-sdk-extended` for reporting without leaving your app.
+
 ## [0.2.0] — 2026-11-05
 
 **The package now contains native code, and needs a native rebuild.** One TurboModule, in Kotlin
@@ -841,6 +847,7 @@ First implementation. Not published to npm, and written before the Tracive API w
 - No native code, no autolinking, no podspec.
 - There is no API key in this surface, in either mode.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.1.0
