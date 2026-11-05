@@ -6,6 +6,43 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-05
+
+**The package now contains native code, and needs a native rebuild.** One TurboModule, in Kotlin
+and Swift, autolinked from `android/` and `TraciveSdkReactNative.podspec`. Rebuild after upgrading
+(`npx expo run:android` / `npx expo run:ios`, an EAS build, or Gradle and `pod install`); a
+JavaScript-only update such as an OTA cannot deliver it, and Expo Go does not contain it. Only
+`openReportForm` uses it: everything else keeps working on a binary without it, and
+`openReportForm` there answers `failed` with `PLATFORM_FAILURE`.
+
+### Added
+
+- **`client.openReportForm(query, options)` opens the Tracive report form already filled in**, from
+  a transaction detail screen: the account, the transaction date (`incidentDate: 'YYYY-MM-DD'`) and
+  up to 5 receipts (10 for a phone number) built with `ReportAttachment.image(bytes, mimeType)` and
+  `ReportAttachment.pdf(bytes)`. It needs no grant, no token and no network, costs no credit, and
+  works in every mode, a `CONFIDENTIAL` client and proxy mode included.
+
+  It resolves to a `ReportFormResult`: `opened` (with `attachmentsDelivered: false` when an older
+  Tracive took the account only), `cancelled` (iOS: the "Open in" sheet was closed or the file went
+  to another app), `installPageOpened`, or `failed` with a typed `ReportFormError` —
+  `INCIDENT_DATE_IN_FUTURE`, `TOO_MANY_ATTACHMENTS` (`max`), `UNSUPPORTED_TYPE`, `CONTENT_MISMATCH`
+  and `PDF_TOO_LARGE` (`index`), `PACKAGE_TOO_LARGE` (`max`) or `PLATFORM_FAILURE`. A refused input
+  opens nothing. The rules are the shared `report-package-vectors.json`, vendored byte-identically
+  into all four Tracive SDKs and pinned by hash in `npm run fixture:verify`.
+
+  The client's `environment` picks the Tracive build. `target` overrides it, for testing against a
+  build the SDK does not know about (`ReportFormTarget.custom`). `ReportFormLauncher` is the port
+  behind it, for faking the hand-off in your own tests.
+
+- **iOS hosts need two more query schemes**, `tracive-report` and `tracivesandbox-report`. The Expo
+  config plugin adds them and `tracive-doctor` warns when they are missing. Without them
+  `openReportForm` still opens the form, with the account only.
+
+- **Android hosts get one provider in the merged manifest**: `TraciveReportFileProvider`, authority
+  `${applicationId}.tracive-rn-files`, not exported, serving only `cache/tracive-sdk/report/`. No
+  permission and no `<queries>` entry is added. See docs/integration.md.
+
 ## [0.1.0] — 2026-11-04
 
 First public release, on npm as `@pleistocent/tracive-sdk-react-native`. phase 1: OAuth mode only,
@@ -804,5 +841,6 @@ First implementation. Not published to npm, and written before the Tracive API w
 - No native code, no autolinking, no podspec.
 - There is no API key in this surface, in either mode.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.1.0
