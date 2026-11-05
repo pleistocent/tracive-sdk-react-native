@@ -126,5 +126,19 @@ export type { Diagnostic } from './diagnostics';
 export {
   TraciveClient,
   type CheckScammerOptions,
+  type OpenReportFormOptions,
   type TraciveClientOptions,
 } from './client/TraciveClient';
+
+// ---------------------------------------------------------------------------------------------
+// Report a scammer
+// ---------------------------------------------------------------------------------------------
+export { ReportAttachment } from './report/ReportAttachment';
+export { ReportFormTarget } from './report/ReportFormTarget';
+export {
+  REPORT_FORM_ERROR_CODES,
+  type ReportFormError,
+  type ReportFormErrorCode,
+  type ReportFormResult,
+} from './report/ReportFormResult';
+export type { ReportFormLaunch, ReportFormLauncher } from './report/ReportFormLauncher';

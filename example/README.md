@@ -15,6 +15,13 @@ Both scripts rebuild the SDK first (`npm --prefix .. run build`), so the app alw
 working tree rather than a published version. `@pleistocent/tracive-sdk-react-native` is a `file:..`
 dependency; nothing here is fetched from npm.
 
+**A development build, never Expo Go.** The scripts are `expo run:android` / `expo run:ios`, which
+compile `android/` and `ios/` with the SDK's native module autolinked. The example has never run in
+Expo Go: `src/flavor.ts` picks the flavor from the installed application id, and Expo Go's own id
+matches none, so the app stops at startup with "No example flavor for application id". It could not
+run `openReportForm` there anyway, since Expo Go does not contain the module. After pulling a change
+to the SDK's native code, run the script again rather than only reloading the bundle.
+
 ## What you should see
 
 1. **A folded lookup key, live.** `0857-1860-9079` with `IDN` selected becomes `+6285718609079` and
@@ -32,6 +39,14 @@ dependency; nothing here is fetched from npm.
    25-code-point set and `\D` being ASCII-only. Neither can be probed without hard-coding the very
    table the SDK exists not to hand-write, so running the fixture is the only thing that catches
    them.
+
+5. **Report a scammer.** A mock transfer (amount, yesterday's date, a BCA account) with a Report
+   button. It calls `openReportForm` with that account, yesterday's date and a PNG and a PDF receipt
+   generated in code (`src/receipt.ts`), and prints the result. It needs no grant and no network, so
+   it works in the demo flavor too; it needs the chosen Tracive build on the device. The picker
+   chooses that build: **Sandbox** (the default), **Production**, or **Dev build (QA)**, an explicit
+   `target` for a Tracive QA build the SDK does not know. Expect `installPageOpened` when that build
+   is missing, and `opened` with `attachmentsDelivered: false` when it predates report packages.
 
 ## Three flavors
 
@@ -108,6 +123,13 @@ grep -rn "TODO(partner)" example
 `android:roundIcon` attribute, the signing-config comment and every flavor — product flavors and
 their manifests, the iOS configurations, schemes and `Flavors/` xcconfigs, and the Podfile mapping
 — so `git diff` afterwards and put them back.
+
+A second, local plugin, `plugins/withTraciveDevBuild.js`, makes the Tracive dev build reachable for
+the report picker: `<queries><package android:name="com.pleistocent.tracive.dev"/></queries>` in the
+manifest and `tracivedev` / `tracivedev-report` in `LSApplicationQueriesSchemes`, next to the SDK
+plugin's four. Because the native projects are checked in, those entries were also written into
+`android/app/src/main/AndroidManifest.xml` and `ios/TraciveRN/Info.plist` by hand, in the order a
+prebuild produces them. A partner app needs neither: it targets production and sandbox only.
 
 `npm run doctor` runs `tracive-doctor` against the generated project. It reports nothing, and it can
 fail: delete the `autoVerify` intent-filter from the manifest and it exits 1 naming the host.

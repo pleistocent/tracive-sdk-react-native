@@ -1,8 +1,9 @@
 # Integration
 
 Everything on this page names **your** app's domain, package or bundle identifier, which a library
-cannot know. That is why the SDK ships no native code and asks the host to declare it — and why it
-ships `tracive-doctor` to check that you did.
+cannot know. That is why the SDK asks the host to declare it — and why it ships `tracive-doctor` to
+check that you did. The one native piece the SDK does ship, the module behind `openReportForm`,
+autolinks and needs only a native rebuild; see the last section.
 
 Run this first, and after any change to your native project:
 
@@ -100,10 +101,12 @@ In `ios/<App>/Info.plist`:
 <array>
     <string>tracive</string>
     <string>tracivesandbox</string>
+    <string>tracive-report</string>
+    <string>tracivesandbox-report</string>
 </array>
 ```
 
-Both schemes, not just the first. The presence probe follows the environment: against
+The last two are for `openReportForm`; see the last section. Both app schemes, not just the first. The presence probe follows the environment: against
 `TraciveEnvironment.sandbox` it probes `tracivesandbox://`, and a host that declares only `tracive`
 reports "not installed" for a sandbox build that is installed — sending a tester to an install page
 for an app they are holding. `npx tracive-doctor` checks for both.
@@ -222,5 +225,50 @@ you for the misses. Do not attempt to detect that build any other way.
 
 ### Expo Go
 
-Authorization cannot complete in Expo Go — see the first section of the README. Everything else
-works, so Expo Go remains fine for prototyping the query builders, the models and the cache.
+Authorization cannot complete in Expo Go — see the first section of the README — and
+`openReportForm` cannot run there, because Expo Go does not contain the SDK's native module: it
+answers `failed` with `PLATFORM_FAILURE`. Everything else works, so Expo Go remains fine for
+prototyping the query builders, the models and the cache.
+
+---
+
+## Report a scammer: what `openReportForm` adds to your app
+
+**A native rebuild.** The package contains a TurboModule (Kotlin and Swift) since 0.2.0. It
+autolinks from `android/` and `TraciveSdkReactNative.podspec`; rebuild with `npx expo run:android` /
+`npx expo run:ios`, an EAS build, or Gradle and `pod install`. A JavaScript-only update cannot deliver
+it.
+
+**iOS: two query schemes.** `tracive-report` and `tracivesandbox-report` in
+`LSApplicationQueriesSchemes`, next to `tracive` and `tracivesandbox` (block above). The Expo config
+plugin writes them. Without them `canOpenURL` cannot see that the installed Tracive accepts the
+package, so the SDK falls back to the identifier-only link: the form still opens, without the date
+and the files, and the result is `opened` with `attachmentsDelivered: false`. `npx tracive-doctor`
+reports the omission as a warning.
+
+**Android: one provider, nothing else.** The SDK's own manifest merges this into yours:
+
+```xml
+<provider
+    android:name="id.tracive.sdk.reactnative.TraciveReportFileProvider"
+    android:authorities="${applicationId}.tracive-rn-files"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/tracive_rn_report_paths" />
+</provider>
+```
+
+- Not exported; it serves only `cache/tracive-sdk/report/`, which holds at most the latest package
+  (each call deletes the previous one first).
+- A subclass, so it does not merge into your own `androidx.core.content.FileProvider` entry, and an
+  authority of its own, so it does not collide with the Kotlin or Flutter Tracive SDK if your app
+  also carries one of those.
+- The file is handed over in an explicit `ACTION_VIEW` intent (`setPackage` to the Tracive build)
+  with `FLAG_GRANT_READ_URI_PERMISSION`, so only that app can read it, and only through that intent.
+- No permission and no `<queries>` entry: the scheme entries in the first section already make the
+  Tracive app visible. A Tracive build you target explicitly (`target`, for testing) needs its own
+  `<queries><package android:name="…"/></queries>`.
+
+Banks audit the merged manifest, so this is the whole list of what lands there.

@@ -3,6 +3,7 @@ import { describe, expect, it } from '@jest/globals';
 import {
   applyTraciveLaunchMode,
   mergeTraciveQueries,
+  mergeTraciveQuerySchemes,
   parseRedirectUri,
 } from '../plugin';
 import { TRACIVE_APP_SCHEMES } from '../../oauth/authorizeUrl';
@@ -124,6 +125,29 @@ describe('the Android <queries> merge', () => {
     mergeTraciveQueries(manifest);
     const queries = manifest.queries as QueriesElement[];
     expect(schemes(queries).filter((scheme) => scheme === 'https')).toHaveLength(2);
+  });
+});
+
+describe('the iOS LSApplicationQueriesSchemes merge', () => {
+  it('adds both app schemes and both report schemes', () => {
+    expect(mergeTraciveQuerySchemes(undefined)).toEqual([
+      'tracive',
+      'tracivesandbox',
+      'tracive-report',
+      'tracivesandbox-report',
+    ]);
+  });
+
+  it('keeps what the host listed and adds nothing twice', () => {
+    const once = mergeTraciveQuerySchemes(['whatsapp', 'tracive-report']);
+    expect(once).toEqual([
+      'whatsapp',
+      'tracive-report',
+      'tracive',
+      'tracivesandbox',
+      'tracivesandbox-report',
+    ]);
+    expect(mergeTraciveQuerySchemes([...once])).toEqual(once);
   });
 });
 

@@ -20,7 +20,9 @@ concepts line up; the type and method names are this package's own.
 
 ## A. Where the SDK sits
 
-The package is pure TypeScript and ships no native code. Everything that touches the outside world
+The package is TypeScript plus one small native module, used only by `openReportForm` to write the
+report package and hand it to the Tracive app; TypeScript validates and builds the package first.
+Everything that touches the outside world
 — the network, the clock, randomness, storage, the OS link surface — is an interface you can
 replace, which is why the whole SDK is testable without a socket, a device or a browser.
 

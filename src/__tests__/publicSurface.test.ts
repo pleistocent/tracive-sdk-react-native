@@ -10,9 +10,16 @@ import { TraciveQuery } from '../query/TraciveQuery';
 import { NoOpCheckCache } from '../cache/CheckCache';
 import { RetryPolicy } from '../client/RetryPolicy';
 import { TraciveClient } from '../client/TraciveClient';
-import { TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
-import { TRACIVE_APP_SCHEMES as doctorSchemes } from '../doctor/checks';
-import { TRACIVE_APP_SCHEMES as pluginSchemes } from '../expo/plugin';
+import { TRACIVE_APP_SCHEMES, TRACIVE_REPORT_SCHEMES } from '../oauth/authorizeUrl';
+import {
+  TRACIVE_APP_SCHEMES as doctorSchemes,
+  TRACIVE_REPORT_SCHEMES as doctorReportSchemes,
+} from '../doctor/checks';
+import {
+  TRACIVE_APP_SCHEMES as pluginSchemes,
+  TRACIVE_REPORT_SCHEMES as pluginReportSchemes,
+} from '../expo/plugin';
+import { ReportFormTarget } from '../report/ReportFormTarget';
 
 function sourceFiles(directory: string, found: string[] = []): string[] {
   for (const entry of readdirSync(directory)) {
@@ -122,7 +129,7 @@ describe('the Tracive app’s URL schemes', () => {
   it('are each written as a literal in exactly one source file', () => {
     // Built from the constants rather than typed out, so this test cannot become a second
     // definition of the very thing it exists to keep single.
-    for (const scheme of TRACIVE_APP_SCHEMES) {
+    for (const scheme of [...TRACIVE_APP_SCHEMES, ...TRACIVE_REPORT_SCHEMES]) {
       const literal = `'${scheme}'`;
       const definitions: string[] = [];
       for (const path of sourceFiles(join(process.cwd(), 'src'))) {
@@ -143,6 +150,19 @@ describe('the Tracive app’s URL schemes', () => {
     expect([...TRACIVE_APP_SCHEMES]).toEqual(['tracive', 'tracivesandbox']);
     expect([...doctorSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
     expect([...pluginSchemes]).toEqual([...TRACIVE_APP_SCHEMES]);
+  });
+
+  it('include the report schemes the plugin writes, the doctor checks and openReportForm probes', () => {
+    expect([...TRACIVE_REPORT_SCHEMES]).toEqual(['tracive-report', 'tracivesandbox-report']);
+    expect([...doctorReportSchemes]).toEqual([...TRACIVE_REPORT_SCHEMES]);
+    expect([...pluginReportSchemes]).toEqual([...TRACIVE_REPORT_SCHEMES]);
+    expect([
+      ReportFormTarget.production.reportScheme,
+      ReportFormTarget.sandbox.reportScheme,
+    ]).toEqual([...TRACIVE_REPORT_SCHEMES]);
+    expect([ReportFormTarget.production.scheme, ReportFormTarget.sandbox.scheme]).toEqual([
+      ...TRACIVE_APP_SCHEMES,
+    ]);
   });
 });
 
@@ -188,6 +208,9 @@ describe('the public surface', () => {
       'isTraciveQueryError',
       'isCheckCacheError',
       'isTraciveConfigurationError',
+      'ReportAttachment',
+      'ReportFormTarget',
+      'REPORT_FORM_ERROR_CODES',
     ]) {
       expect(Object.keys(publicSurface)).toContain(name);
     }

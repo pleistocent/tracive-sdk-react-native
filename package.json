@@ -46,6 +46,9 @@
     "lib",
     "src",
     "bin",
+    "android",
+    "ios",
+    "TraciveSdkReactNative.podspec",
     "app.plugin.js",
     "LICENSE",
     "README.md",
@@ -54,7 +57,9 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/.*",
-    "!src/types"
+    "!src/types",
+    "!android/build",
+    "!android/src/test"
   ],
   "sideEffects": false,
   "engines": {
@@ -156,5 +161,18 @@
         }
       ]
     ]
+  },
+  "codegenConfig": {
+    "name": "TraciveSdkReactNativeSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "id.tracive.sdk.reactnative"
+    },
+    "ios": {
+      "modulesProvider": {
+        "TraciveReportForm": "TraciveReportForm"
+      }
+    }
   }
 }

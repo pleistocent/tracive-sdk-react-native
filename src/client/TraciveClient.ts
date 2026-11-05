@@ -12,9 +12,21 @@ import type { ProfileInfo } from '../model/ProfileInfo';
 import { TraciveEnvironment } from '../model/TraciveEnvironment';
 import { parseRetryAfterSeconds, TraciveError, traciveErrorFrom } from '../model/TraciveError';
 import { redactedProxyConfiguration, type TraciveMode } from '../model/TraciveMode';
+import { buildInstallUrl, DEFAULT_INSTALL_URL } from '../oauth/authorizeUrl';
 import { TraciveOAuth } from '../oauth/TraciveOAuth';
 import type { TokenStore } from '../oauth/TokenStore';
 import type { TraciveQuery } from '../query/TraciveQuery';
+import { NativeReportFormLauncher } from '../report/NativeReportFormLauncher';
+import type { ReportAttachment } from '../report/ReportAttachment';
+import { reportFormLaunch, type ReportFormLauncher } from '../report/ReportFormLauncher';
+import type { ReportFormResult } from '../report/ReportFormResult';
+import { ReportFormTarget } from '../report/ReportFormTarget';
+import {
+  buildReportPackage,
+  isCalendarDate,
+  localDate,
+  reportFormLink,
+} from '../report/reportPackage';
 import {
   FetchHttpTransport,
   redactedRequest,
@@ -46,7 +58,30 @@ export interface TraciveClientOptions {
   readonly tokenStore?: TokenStore;
   /** Wins over `tokenStore` when present. */
   readonly oauth?: TraciveOAuth;
+  /** The platform half of {@link TraciveClient.openReportForm}; the default is the native module. */
+  readonly reportFormLauncher?: ReportFormLauncher;
   readonly onDiagnostic?: DiagnosticSink;
+}
+
+export interface OpenReportFormOptions {
+  /**
+   * The transaction's calendar date as the user saw it, written `YYYY-MM-DD` (`'2026-11-03'`). It
+   * is a date, not an instant: it is sent as written, with no time-zone conversion.
+   */
+  readonly incidentDate?: string;
+  /** At most 5, or 10 when the query is a phone number. */
+  readonly attachments?: readonly ReportAttachment[];
+  /**
+   * iOS: the React tag of the view the "Open in" sheet points at, usually the button that was
+   * tapped (`findNodeHandle(buttonRef.current)`). It is a popover on iPad. Without one the sheet is
+   * presented from the top view controller. Ignored on Android.
+   */
+  readonly anchor?: number | null;
+  /**
+   * The Tracive build to hand the report to, for testing against a build the SDK does not know
+   * about. Leave it unset in a shipping app: the client's `environment` picks the build.
+   */
+  readonly target?: ReportFormTarget;
 }
 
 export interface CheckScammerOptions {
@@ -125,6 +160,8 @@ export class TraciveClient {
   readonly #clock: TraciveClock;
   readonly #random: TraciveRandom;
   readonly #onDiagnostic: DiagnosticSink | undefined;
+  readonly #reportFormLauncher: ReportFormLauncher;
+  #reportFormInFlight: Promise<ReportFormResult> | undefined;
   /**
    * Single-flight for checks, keyed on the folded record key plus the detail level and the locale,
    * and on the caller's idempotency key when they supplied one. See `#fetchCheck` for why this
@@ -146,6 +183,11 @@ export class TraciveClient {
     this.#clock = options.clock ?? systemClock;
     this.#random = options.random ?? defaultRandom;
     this.#onDiagnostic = options.onDiagnostic;
+    this.#reportFormLauncher =
+      options.reportFormLauncher ??
+      new NativeReportFormLauncher(
+        options.onDiagnostic === undefined ? undefined : { onDiagnostic: options.onDiagnostic },
+      );
     this.cache =
       options.cache ?? new InMemoryCheckCache({ policy: this.cachePolicy, clock: this.#clock });
 
@@ -288,6 +330,93 @@ export class TraciveClient {
 
   async clearCache(): Promise<void> {
     await this.cache.clear();
+  }
+
+  // ---------------------------------------------------------------------------------------
+  // Report form
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * Opens the Tracive app's report form with the identifier, the transaction date and the
+   * receipts already filled in. The files stay on the device until the user submits the report
+   * in Tracive.
+   *
+   * Needs no grant, no token and no network, and costs no credit, so it works in every mode,
+   * including a `CONFIDENTIAL` client and proxy mode. The client's `environment` picks the build
+   * (custom maps to production).
+   *
+   * Never rejects for a device-side problem: a refused input or a hand-off that could not happen
+   * comes back as `failed`, and nothing was opened. A call made while another is still being
+   * handed off receives that call's result rather than opening a second form.
+   *
+   * @throws {TypeError} when the arguments are not what the types say (a date not written
+   *   `YYYY-MM-DD` or naming no real day, an attachment without bytes), before anything is opened.
+   */
+  async openReportForm(
+    query: TraciveQuery,
+    options?: OpenReportFormOptions,
+  ): Promise<ReportFormResult> {
+    if (
+      typeof (query as { searchQueryIndex?: unknown } | undefined)?.searchQueryIndex !== 'string'
+    ) {
+      throw new TypeError('openReportForm takes a TraciveQuery');
+    }
+    const incidentDate: unknown = options?.incidentDate;
+    if (
+      incidentDate !== undefined &&
+      (typeof incidentDate !== 'string' || !isCalendarDate(incidentDate))
+    ) {
+      throw new TypeError(
+        'incidentDate must be a calendar date written YYYY-MM-DD, e.g. 2026-11-03',
+      );
+    }
+    const attachments: unknown = options?.attachments ?? [];
+    if (
+      !Array.isArray(attachments) ||
+      !attachments.every(
+        (attachment: Partial<ReportAttachment> | null | undefined) =>
+          attachment?.bytes instanceof Uint8Array && typeof attachment.mimeType === 'string',
+      )
+    ) {
+      throw new TypeError('attachments must be built with ReportAttachment.image or .pdf');
+    }
+    const target =
+      options?.target === undefined
+        ? ReportFormTarget.forEnvironment(this.environment)
+        : ReportFormTarget.custom(options.target);
+
+    const built = buildReportPackage({
+      query: query.searchQueryIndex,
+      incidentDate,
+      attachments: attachments as readonly ReportAttachment[],
+      today: localDate(this.#clock.nowMs()),
+    });
+    if (!built.ok) return { type: 'failed', error: built.error };
+
+    const inFlight = this.#reportFormInFlight;
+    if (inFlight !== undefined) return inFlight;
+
+    const request = reportFormLaunch({
+      packageJson: built.json,
+      target,
+      fallbackUrl: reportFormLink(target.scheme, query.searchQueryIndex),
+      installUrl:
+        this.oauth?.installUrlForDisplay() ?? buildInstallUrl(DEFAULT_INSTALL_URL, undefined),
+      anchor: options?.anchor ?? undefined,
+    });
+    // The executor turns a launcher that throws synchronously into a rejection, caught below.
+    const flight = new Promise<ReportFormResult>((resolve) =>
+      resolve(this.#reportFormLauncher.launch(request)),
+    )
+      .catch((): ReportFormResult => ({
+        type: 'failed',
+        error: { code: 'PLATFORM_FAILURE', message: 'The report form launcher threw.' },
+      }))
+      .finally(() => {
+        this.#reportFormInFlight = undefined;
+      });
+    this.#reportFormInFlight = flight;
+    return flight;
   }
 
   // ---------------------------------------------------------------------------------------

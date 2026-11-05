@@ -57,7 +57,20 @@ const SCANNER_OWN_FILES = new Set([
 /** Anything larger, or holding a NUL in its first block, is treated as binary and skipped. */
 const MAX_SCANNED_BYTES = 2_000_000;
 
-const SKIP_DIRECTORIES = new Set(['node_modules', '.git', 'lib', 'coverage', 'android', 'ios']);
+// Build output and installed dependencies, by name. The native sources are scanned: the package's
+// own android/ and ios/ and the example's checked-in projects are code this repository publishes.
+const SKIP_DIRECTORIES = new Set([
+  'node_modules',
+  '.git',
+  'lib',
+  'coverage',
+  'build',
+  '.gradle',
+  '.cxx',
+  '.kotlin',
+  'Pods',
+  'DerivedData',
+]);
 // An npm lockfile is a machine-written transcript of the public registry, not prose anybody here
 // wrote, and it names every transitive package. `example/`'s tree contains a bin entry called
 // `expo-internal`, which matches the `<something>-internal` repository-name SHAPE — a true match
@@ -86,6 +99,23 @@ const TEXT_EXTENSIONS = new Set([
   '.xml',
   '.plist',
   '.sh',
+  '.kt',
+  '.kts',
+  '.java',
+  '.gradle',
+  '.properties',
+  '.pro',
+  '.swift',
+  '.h',
+  '.m',
+  '.mm',
+  '.podspec',
+  '.rb',
+  '.xcconfig',
+  '.pbxproj',
+  '.entitlements',
+  '.storyboard',
+  '.xcprivacy',
 ]);
 
 // The one allowed exception, and the only permitted matches for the org token.

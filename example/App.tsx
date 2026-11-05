@@ -13,6 +13,8 @@
  *     an SDK result, so this UI surfaces it.
  *   * The two shared fixtures, executed on Hermes. See `src/conformance.ts` — that panel is the
  *     one check in the whole design that can fail for the reason the fixtures exist.
+ *   * `openReportForm` from a mock transaction detail (`src/ReportScammer.tsx`): the Tracive
+ *     report form opened with the account, the date and two receipts already filled in.
  *
  * THREE FLAVORS (src/flavor.ts). `demo`, the default, answers every call in-process from
  * `DemoBackend`, injected as the client's `transport`, so the app runs on a first clone with no
@@ -56,6 +58,7 @@ import {
 } from '@pleistocent/tracive-sdk-react-native/expo';
 
 import { DemoBackend } from './src/demoBackend';
+import { ReportScammer } from './src/ReportScammer';
 import { runConformance, type ConformanceReport } from './src/conformance';
 import { currentFlavor, type Flavor } from './src/flavor';
 
@@ -416,6 +419,8 @@ export default function App() {
         </View>
 
         <Conformance report={report} />
+
+        <ReportScammer client={session?.client} />
       </ScrollView>
     </View>
   );

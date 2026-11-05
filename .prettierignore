@@ -10,3 +10,7 @@ test/fixtures/**
 # rather than against anything anybody wrote.
 example/android/**
 example/ios/**
+
+# Gradle and Xcode output of the package's own native module.
+android/build/**
+ios/build/**

@@ -123,8 +123,9 @@ contacts a real host, and none should.
 
 ## 10. Expo Go caps adoption
 
-Authorization cannot complete in Expo Go, and no packaging choice changes that. If a large share of
-target integrators are Expo-Go-only, that is a product question rather than an engineering one.
+Authorization cannot complete in Expo Go, and no packaging choice changes that. Since 0.2.0
+`openReportForm` cannot run there either, because it needs the SDK's native module. If a large share
+of target integrators are Expo-Go-only, that is a product question rather than an engineering one.
 
 ## 11. `react-native-keychain` is quiet upstream
 

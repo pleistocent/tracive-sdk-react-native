@@ -7,11 +7,11 @@ import {
   type ConfigPlugin,
 } from '@expo/config-plugins';
 
-import { TRACIVE_APP_SCHEMES } from '../oauth/authorizeUrl';
+import { TRACIVE_APP_SCHEMES, TRACIVE_REPORT_SCHEMES } from '../oauth/authorizeUrl';
 
 // Re-exported so the plugin's own tests can name them; the definitions live with the flow that
 // probes for the app at runtime. See `authorizeUrl.ts`.
-export { TRACIVE_APP_SCHEMES };
+export { TRACIVE_APP_SCHEMES, TRACIVE_REPORT_SCHEMES };
 
 const VIEW_ACTION = 'android.intent.action.VIEW';
 
@@ -69,6 +69,21 @@ export function mergeTraciveQueries(manifest: { queries?: unknown[] }): void {
   target.intent = intents;
 
   manifest.queries = queries;
+}
+
+/**
+ * Adds Tracive's schemes to `LSApplicationQueriesSchemes`, keeping whatever is already listed.
+ *
+ * Both app schemes: the sandbox build registers its own, and a probe for it cannot answer without
+ * an entry of its own. The report schemes let `openReportForm` hand over the date and the
+ * attachments; without them it falls back to the identifier-only link.
+ */
+export function mergeTraciveQuerySchemes(existing: string[] | undefined): string[] {
+  const schemes = existing ?? [];
+  for (const scheme of [...TRACIVE_APP_SCHEMES, ...TRACIVE_REPORT_SCHEMES]) {
+    if (!schemes.includes(scheme)) schemes.push(scheme);
+  }
+  return schemes;
 }
 
 export interface TracivePluginProps {
@@ -168,14 +183,9 @@ const withTracive: ConfigPlugin<TracivePluginProps> = (config, props) => {
   // not crash, does not log and does not degrade — it silently routes every already-onboarded
   // user to an install page.
   config = withInfoPlist(config, (modConfig) => {
-    const schemes =
-      (modConfig.modResults.LSApplicationQueriesSchemes as string[] | undefined) ?? [];
-    // Both schemes: the sandbox build registers its own, and a probe for it cannot answer without
-    // an entry of its own here.
-    for (const scheme of TRACIVE_APP_SCHEMES) {
-      if (!schemes.includes(scheme)) schemes.push(scheme);
-    }
-    modConfig.modResults.LSApplicationQueriesSchemes = schemes;
+    modConfig.modResults.LSApplicationQueriesSchemes = mergeTraciveQuerySchemes(
+      modConfig.modResults.LSApplicationQueriesSchemes as string[] | undefined,
+    );
     return modConfig;
   });
 

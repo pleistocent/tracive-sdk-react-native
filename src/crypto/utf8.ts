@@ -70,3 +70,30 @@ export function utf8Decode(bytes: Uint8Array): string {
   }
   return out;
 }
+
+/** What `utf8Encode(value).length` would be, without allocating the bytes. */
+export function utf8ByteLength(value: string): number {
+  // A package is megabytes of base64, so the usual printable-ASCII case is one native scan. Anything
+  // outside space..tilde, ASCII controls included, takes the exact count below.
+  if (!/[^ -~]/.test(value)) return value.length;
+  let length = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x80) {
+      length += 1;
+    } else if (code < 0x800) {
+      length += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      const next = value.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        length += 4;
+        i++;
+      } else {
+        length += 3;
+      }
+    } else {
+      length += 3;
+    }
+  }
+  return length;
+}

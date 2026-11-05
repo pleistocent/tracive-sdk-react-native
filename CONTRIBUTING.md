@@ -188,7 +188,8 @@ third does not spend its budget re-deriving them. Anything that differs across t
   billed — is identical, and so is what a caller observes.
 - **All four app-presence probes follow the environment, but Kotlin's asks a different question.**
   This package, Flutter and Swift probe the app's URL scheme, which is all a package with no native
-  code can reach. Kotlin has real Android code, so it checks the exact application id through
+  code could reach when the probes were written (this package's native module, added for
+  `openReportForm`, does not take part in `authorize()`). Kotlin has real Android code, so it checks the exact application id through
   `PackageManager` and takes its package visibility from a `<queries><intent>` on the authorize App
   Link — a scheme any app may declare, an App Link only the build named in the host's assetlinks
   can. Kotlin is therefore the strictest of the four, and this package cannot be brought up to it

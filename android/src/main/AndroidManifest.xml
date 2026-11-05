@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merged into every host app's manifest. It adds one provider and nothing else: no permission, no
+  <queries> entry, no exported component.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <application>
+    <!--
+      Serves the report package to the Tracive app for the length of one explicit intent, and only
+      files under cache/tracive-sdk/report/. Not exported: the Tracive app reads the file through
+      the per-intent read grant, never through the provider directly.
+
+      A subclass rather than androidx.core.content.FileProvider, so the manifest merger keeps it
+      apart from the host's own FileProvider entry. The authority carries ${applicationId} so two
+      apps with this SDK can be installed side by side.
+    -->
+    <provider
+      android:name="id.tracive.sdk.reactnative.TraciveReportFileProvider"
+      android:authorities="${applicationId}.tracive-rn-files"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/tracive_rn_report_paths" />
+    </provider>
+  </application>
+
+</manifest>

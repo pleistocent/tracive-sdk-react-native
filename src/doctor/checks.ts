@@ -15,6 +15,7 @@
 import {
   TRACIVE_APP_SCHEME,
   TRACIVE_APP_SCHEMES,
+  TRACIVE_REPORT_SCHEMES,
 } from '../oauth/authorizeUrl';
 
 /**
@@ -23,7 +24,7 @@ import {
  * whether their manifest agrees with the SDK, and a doctor working from its own copy of the answer
  * can certify a manifest the SDK will then refuse. See `authorizeUrl.ts`.
  */
-export { TRACIVE_APP_SCHEME, TRACIVE_APP_SCHEMES };
+export { TRACIVE_APP_SCHEME, TRACIVE_APP_SCHEMES, TRACIVE_REPORT_SCHEMES };
 
 export type FindingSeverity = 'error' | 'warning';
 
@@ -191,14 +192,16 @@ export function checkInfoPlist(plist: string): Finding[] {
           'false on iOS and every user is routed to the install page.',
         fix:
           '<key>LSApplicationQueriesSchemes</key>\n<array>\n' +
-          TRACIVE_APP_SCHEMES.map((s) => `    <string>${s}</string>`).join('\n') +
+          [...TRACIVE_APP_SCHEMES, ...TRACIVE_REPORT_SCHEMES]
+            .map((s) => `    <string>${s}</string>`)
+            .join('\n') +
           `\n</array>`,
       },
     ];
   }
-  const missingIosSchemes = TRACIVE_APP_SCHEMES.filter(
-    (scheme) => !new RegExp(`<string>${scheme}</string>`).test(arrayMatch[1] ?? ''),
-  );
+  const listed = (scheme: string) =>
+    new RegExp(`<string>${scheme}</string>`).test(arrayMatch[1] ?? '');
+  const missingIosSchemes = TRACIVE_APP_SCHEMES.filter((scheme) => !listed(scheme));
   if (missingIosSchemes.length > 0) {
     return [
       {
@@ -206,6 +209,22 @@ export function checkInfoPlist(plist: string): Finding[] {
         code: 'missing_ios_query_scheme',
         message: 'LSApplicationQueriesSchemes does not list `tracive`.',
         fix: missingIosSchemes.map((s) => `    <string>${s}</string>`).join('\n'),
+      },
+    ];
+  }
+  // A warning, not an error: without these openReportForm still opens the form, through the
+  // identifier-only link, and only the date and the attachments are lost.
+  const missingReportSchemes = TRACIVE_REPORT_SCHEMES.filter((scheme) => !listed(scheme));
+  if (missingReportSchemes.length > 0) {
+    return [
+      {
+        severity: 'warning',
+        code: 'missing_ios_report_scheme',
+        message:
+          'LSApplicationQueriesSchemes does not list ' +
+          `${missingReportSchemes.join(', ')}, so openReportForm cannot tell that the Tracive ` +
+          'app accepts attachments and sends only the identifier.',
+        fix: missingReportSchemes.map((s) => `    <string>${s}</string>`).join('\n'),
       },
     ];
   }

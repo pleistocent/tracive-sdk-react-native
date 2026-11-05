@@ -30,8 +30,9 @@ is broken":
    cannot be tested in Expo Go, so the iOS app-presence probe answers `false` regardless of the
    truth; and Expo Go's redirect URI is an `exp://` URL that changes with the dev server's address,
    while the authorization server matches the registered redirect exactly. **A development build or a bare
-   React Native app is required for the authorization round-trip.** Query building, the models, the
-   record-key guard and the cache all work fine in Expo Go for prototyping.
+   React Native app is required for the authorization round-trip.** `openReportForm` needs one too,
+   because it runs in the SDK's native module. Query building, the models, the record-key guard and
+   the cache all work fine in Expo Go for prototyping.
 
 4. **Every check is billed, including one that finds nothing.** A miss costs the same as a hit.
    That single fact explains most of this SDK's design: the query builders reject a malformed
@@ -46,10 +47,13 @@ is broken":
 npm install @pleistocent/tracive-sdk-react-native
 ```
 
-That is the whole install. The package is pure TypeScript and **ships no native code at all** — no
-`android/`, no `ios/`, no podspec, no autolinking, no TurboModule. It is architecture-agnostic by
-construction, so the Fabric-versus-bridge question never comes up, and it does not pin your React
-Native version to ours.
+Then rebuild the native app: **since 0.2.0 the package contains native code**, one small
+TurboModule in Kotlin and Swift that only `openReportForm` uses. It autolinks (`android/` and
+`TraciveSdkReactNative.podspec` at the package root), so the rebuild is the whole step: `npx expo
+run:android` / `npx expo run:ios` or an EAS build for Expo, a Gradle build and `pod install` for bare
+React Native. Everything else — queries, checks, the cache, authorization — is still TypeScript and
+works on a JavaScript-only update; `openReportForm` on a binary built without the module answers
+`failed` with `PLATFORM_FAILURE` and says to rebuild.
 
 Its only two runtime dependencies are [`@noble/hashes`](https://github.com/paulmillr/noble-hashes)
 and [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers): pure JavaScript, MIT, and
@@ -527,11 +531,121 @@ read a moment earlier can be stale by the time the check lands anyway.
 
 ---
 
+## Report a scammer
+
+From a transaction detail screen, one call opens the Tracive app's report form with the recipient's
+account, the transaction date and the receipts already filled in. The user reviews and submits it in
+Tracive; the files stay on the device until then.
+
+```ts
+import { findNodeHandle } from 'react-native';
+import { ReportAttachment, TraciveQuery } from '@pleistocent/tracive-sdk-react-native';
+
+const result = await client.openReportForm(
+  TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bankCode: 'BCA', account: '1234567890' }),
+  {
+    incidentDate: '2026-11-03', // the transaction's calendar date, YYYY-MM-DD
+    attachments: [
+      ReportAttachment.image(screenshotBytes, 'image/png'), // Uint8Array
+      ReportAttachment.pdf(receiptPdfBytes),
+    ],
+    anchor: findNodeHandle(reportButtonRef.current), // iOS: where the sheet points; iPad popover
+  },
+);
+
+switch (result.type) {
+  case 'opened': // result.attachmentsDelivered is false when an older Tracive took the account only
+  case 'cancelled': // iOS: the user closed the sheet or sent the file elsewhere
+  case 'installPageOpened': // Tracive is not installed; the install page is open, carrying nothing
+    break;
+  case 'failed':
+    // result.error.code: INCIDENT_DATE_IN_FUTURE, TOO_MANY_ATTACHMENTS (max), UNSUPPORTED_TYPE,
+    // CONTENT_MISMATCH or PDF_TOO_LARGE (index), PACKAGE_TOO_LARGE (max), PLATFORM_FAILURE (message)
+    break;
+}
+```
+
+- **No grant, no token, no network, no credit.** It works in every mode, a `CONFIDENTIAL` client and
+  proxy mode included. The client's `environment` picks the Tracive build (a custom environment maps
+  to production).
+- **`incidentDate` is a string, `YYYY-MM-DD`**, not a `Date`: it is the day the user saw on the
+  transaction, sent with no time-zone conversion. It may not be after the device's local today. A
+  string that is not a real calendar date throws a `TypeError`; nothing is opened.
+- **Attachments:** JPEG, PNG, WebP, HEIC, HEIF, BMP and PDF, checked against their first bytes. At
+  most 5, or 10 when the query is a phone number. A PDF must be under 1 MiB; images have no cap (the
+  app compresses them), but the whole package must fit in 20 MiB. Any refusal comes back as `failed`
+  with the attachment's `index`, and opens nothing.
+- **What the user sees.** On Android the form opens directly. On iOS an "Open in" sheet appears and
+  the user taps Tracive; picking anything else, or closing the sheet, returns `cancelled`. On iPad,
+  rotating the device closes the sheet too, and the call returns `cancelled` about a second later.
+  A Tracive build too old for attachments gets the account only, through the `report/create` link,
+  and the result says `attachmentsDelivered: false`.
+
+### iOS: two more query schemes
+
+`LSApplicationQueriesSchemes` needs the two report schemes next to the two app schemes. The Expo config
+plugin adds them; by hand:
+
+```xml
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>tracive</string>
+    <string>tracivesandbox</string>
+    <string>tracive-report</string>
+    <string>tracivesandbox-report</string>
+</array>
+```
+
+If they are missing, nothing breaks: the SDK cannot tell that the installed Tracive accepts
+attachments, so it sends the account only and returns `opened` with `attachmentsDelivered: false`.
+`npx tracive-doctor` warns about it.
+
+### Android: one provider in your merged manifest
+
+The SDK's manifest adds a single `FileProvider` subclass, which your merged manifest will show:
+
+```xml
+<provider
+    android:name="id.tracive.sdk.reactnative.TraciveReportFileProvider"
+    android:authorities="${applicationId}.tracive-rn-files"
+    android:exported="false"
+    android:grantUriPermissions="true" />
+```
+
+It is not exported, and it serves only `cache/tracive-sdk/report/`, where the SDK writes the package
+and deletes the previous one on each call. The package goes to Tracive in an explicit intent
+(`setPackage`), with a read grant for that one file, so no other app can receive it. No permission
+and no `<queries>` entry is added; the existing `tracive` / `tracivesandbox` scheme entries already
+make the Tracive app visible.
+
+### Testing against another Tracive build
+
+`target` replaces the build the environment picks, for testing against a build the SDK does not know
+about:
+
+```ts
+await client.openReportForm(query, {
+  target: ReportFormTarget.custom({
+    androidPackage: 'com.pleistocent.tracive.dev',
+    iosBundleId: 'com.pleistocent.tracive.dev',
+    scheme: 'tracivedev',
+    reportScheme: 'tracivedev-report',
+    fileExtension: 'tracivedevreport',
+  }),
+});
+```
+
+That build also needs `<queries><package android:name="…"/></queries>` on Android and both of its
+schemes in `LSApplicationQueriesSchemes` on iOS. Leave `target` unset in a shipping app.
+
+---
+
 ## Everything is a port
 
 Every capability that touches the outside world is an interface you can replace: `HttpTransport`,
 `TraciveClock`, `TraciveRandom`, `TokenStore`, `PendingAuthorizationStore`, `CheckCache`,
-`CheckCacheStore`, `CacheKeyStore`, `CacheCipher`, `AppPresenceProbe`, `AuthorizeLauncher`. That is
+`CheckCacheStore`, `CacheKeyStore`, `CacheCipher`, `AppPresenceProbe`, `AuthorizeLauncher`,
+`ReportFormLauncher`. That is
 what makes the whole SDK testable without a socket, a device or a browser — every test in this
 repository runs against injected fakes — and it is what keeps any single upstream dependency from
 becoming load-bearing.
@@ -556,5 +670,8 @@ over but that you must be able to see in your own telemetry.
 
 - React Native >= 0.76 (see [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — this floor is
   reasoned, not yet proven by a build)
+- A native rebuild after installing or upgrading: `openReportForm` is a TurboModule. It has been
+  built on the New Architecture only (React Native 0.83); the legacy-architecture registration is
+  in the sources but has not been built
 - Node >= 20.19 for the tooling
 - ESM only, no CommonJS build

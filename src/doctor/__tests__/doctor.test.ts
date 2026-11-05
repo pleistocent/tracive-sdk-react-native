@@ -43,7 +43,10 @@ const GOOD_MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 const GOOD_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
   <key>LSApplicationQueriesSchemes</key>
-  <array><string>tracive</string><string>tracivesandbox</string></array>
+  <array>
+    <string>tracive</string><string>tracivesandbox</string>
+    <string>tracive-report</string><string>tracivesandbox-report</string>
+  </array>
 </dict></plist>`;
 
 const GOOD_ENTITLEMENTS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -174,6 +177,23 @@ describe('the iOS checks', () => {
       GOOD_PLIST.replace('<string>tracive</string>', '<string>other</string>'),
     );
     expect(findings[0]?.code).toBe('missing_ios_query_scheme');
+  });
+
+  it.each(['tracive-report', 'tracivesandbox-report'])(
+    'warns, without failing, when LSApplicationQueriesSchemes omits %s',
+    (scheme) => {
+      const findings = checkInfoPlist(GOOD_PLIST.replace(`<string>${scheme}</string>`, ''));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({ severity: 'warning', code: 'missing_ios_report_scheme' });
+      expect(findings[0]?.fix).toBe(`    <string>${scheme}</string>`);
+      expect(exitCodeFor(findings)).toBe(0);
+    },
+  );
+
+  it('lists the report schemes in the block it suggests when the key is absent', () => {
+    const fix = checkInfoPlist('<plist><dict></dict></plist>')[0]?.fix ?? '';
+    expect(fix).toContain('<string>tracive-report</string>');
+    expect(fix).toContain('<string>tracivesandbox-report</string>');
   });
 
   it('fails when the associated domain is missing', () => {

@@ -91,6 +91,21 @@ export const TRACIVE_SANDBOX_APP_SCHEME = 'tracivesandbox';
 export const TRACIVE_APP_SCHEMES = [TRACIVE_APP_SCHEME, TRACIVE_SANDBOX_APP_SCHEME] as const;
 
 /**
+ * The scheme a Tracive build registers once it accepts a report package (`openReportForm`).
+ *
+ * iOS needs it because the "Open in" menu cannot say whether the app understands the file: it
+ * shows a sheet even when nothing does. An older build lacks this scheme, so `canOpenURL` answers
+ * no and the SDK sends the identifier-only link instead. A host that forgets to list it in
+ * `LSApplicationQueriesSchemes` gets the same answer, which is the safe direction.
+ */
+export const TRACIVE_REPORT_SCHEME = 'tracive-report';
+export const TRACIVE_SANDBOX_REPORT_SCHEME = 'tracivesandbox-report';
+export const TRACIVE_REPORT_SCHEMES = [
+  TRACIVE_REPORT_SCHEME,
+  TRACIVE_SANDBOX_REPORT_SCHEME,
+] as const;
+
+/**
  * The URL probed to decide whether the Tracive app is installed.
  *
  * **The scheme alone, with no host — and that requires the app to claim it that way.** Android

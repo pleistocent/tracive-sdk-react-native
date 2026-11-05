@@ -1,0 +1,38 @@
+// Built only as part of a React Native app, which puts the Android and Kotlin Gradle plugins on the
+// classpath and supplies the SDK levels below. The React Native plugin runs codegen from the
+// `codegenConfig` in ../package.json and sets the Java and Kotlin targets.
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+def safeExtGet(name, fallback) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : fallback
+}
+
+android {
+  namespace "id.tracive.sdk.reactnative"
+  compileSdk safeExtGet("compileSdkVersion", 35)
+
+  defaultConfig {
+    minSdkVersion safeExtGet("minSdkVersion", 24)
+    targetSdkVersion safeExtGet("targetSdkVersion", 35)
+  }
+}
+
+react {
+  jsRootDir = file("../src/specs")
+  libraryName = "TraciveSdkReactNativeSpec"
+  codegenJavaPackageName = "id.tracive.sdk.reactnative"
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "androidx.core:core:1.9.0"
+
+  testImplementation "junit:junit:4.13.2"
+}

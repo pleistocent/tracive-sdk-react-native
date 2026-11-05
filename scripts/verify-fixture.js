@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Pins the shared fixtures by content hash.
 //
-// Three fixtures, pinned the same way. The grammar one is the contract between the four SDKs and the
+// Four fixtures, pinned the same way. The grammar one is the contract between the four SDKs and the
 // server's key normalizer; the phone one is the contract between the four SDKs and the Tracive app's
 // own normalizer, which is what keeps app and SDK folding one person to one record key. The bank-code
 // table is the server's own translation of a national bank code or BIC to a bankCode, and the SDK
-// embeds it (src/query/bankCodesJson.ts, which a test keeps identical to this file).
+// embeds it (src/query/bankCodesJson.ts, which a test keeps identical to this file). The report
+// package vectors are the contract between the four SDKs and the Tracive app for openReportForm.
 //
 // Each file is vendored byte-identically into the Tracive SDKs for Kotlin, Flutter and Swift, so an
 // edit in one repository must fail loudly here rather than quietly teaching one SDK a different
@@ -35,6 +36,12 @@ const FIXTURES = [
     sha256: '107b5ca60c49b891ea416f8aed714dd133f79cb1496d1281de596cdc97388ace',
     bytes: 54291,
     name: 'phone-normalization',
+  },
+  {
+    path: 'test/fixtures/report-package-vectors.json',
+    sha256: '1c0afd923252df3e7167f910f1727c82ab6251822e315b46e9a8f46222932563',
+    bytes: 15693,
+    name: 'report-package',
   },
 ];
 

@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.2.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>
@@ -43,8 +43,12 @@
 	<string>1</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>tracivedev</string>
+		<string>tracivedev-report</string>
 		<string>tracive</string>
 		<string>tracivesandbox</string>
+		<string>tracive-report</string>
+		<string>tracivesandbox-report</string>
 	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
