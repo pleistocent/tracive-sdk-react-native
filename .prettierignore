@@ -11,6 +11,9 @@ test/fixtures/**
 example/android/**
 example/ios/**
 
+# A package of its own, with its own .prettierignore: `npm run format` there.
+extended/**
+
 # Gradle and Xcode output of the package's own native module.
 android/build/**
 ios/build/**

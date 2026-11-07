@@ -8,6 +8,9 @@ npm run verify
 `verify` runs, in order: hygiene, fixture pinning, typecheck, lint, tests, build, packaging checks
 and a runtime-dependency audit. All of it must pass before anything is pushed.
 
+`extended/` is a second package with its own tooling, and this package's checks skip it, except
+hygiene, which scans the whole repository. Its README says how to verify it.
+
 > **CI is off.** The workflow is set to manual dispatch only, to stop metered Actions minutes on a
 > private repository — see the note at the top of `.github/workflows/ci.yml`, and re-enable it when
 > there is budget. Everything below still describes real gates; the only change is that **nothing
@@ -30,10 +33,13 @@ strings or commit messages — may name any of the following:
 Say **"the Tracive API"** or **"the server"**. Say **"record key"**. Say **"phase 1" / "phase 2"**.
 
 Android application ids are exempt, production and sandbox alike, plus this repository's own GitHub
-path. Withholding an application id protects nothing: each authorize host publishes its own, and its
-signing-certificate fingerprints, at `/.well-known/assetlinks.json`, because that is what an App
-Link association is. This rule used to ban the sandbox id on the grounds that naming one "only
-discloses that it exists"; that reason was void from the day the sandbox App Link went live.
+path and four exact values for the package in `extended/`: its npm name, its Maven Central artifact,
+the Maven Local filter its Expo plugin writes, and the releases path of the public Swift SDK, where
+its XCFramework is fetched from. Withholding an application id protects nothing: each authorize host
+publishes its own, and its signing-certificate fingerprints, at `/.well-known/assetlinks.json`,
+because that is what an App Link association is. This rule used to ban the sandbox id on the grounds
+that naming one "only discloses that it exists"; that reason was void from the day the sandbox App
+Link went live.
 
 As it happens this package names none of them any more. It probes a URL scheme, not a package, so
 the exemption is here for consistency with the other three SDKs rather than because anything needs

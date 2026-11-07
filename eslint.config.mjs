@@ -35,6 +35,8 @@ export default tseslint.config(
       // The shared grammar fixture is byte-identical across the Tracive SDKs and pinned by hash.
       'test/fixtures/**',
       'example/**',
+      // A package of its own, with its own config: `npm run lint` there.
+      'extended/**',
       // Gradle and Xcode output of the native module, e.g. the HTML test report's scripts.
       'android/build/**',
       'ios/build/**',

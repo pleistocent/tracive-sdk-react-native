@@ -1,0 +1,31 @@
+{
+  "name": "tracive-sdk-extended-react-native-example",
+  "version": "0.2.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "main": "index.ts",
+  "scripts": {
+    "sdk:build": "npm --prefix ../.. run build && npm --prefix .. run build",
+    "setup:local": "rm -rf node_modules/@pleistocent/tracive-sdk-react-native && ln -s ../../../.. node_modules/@pleistocent/tracive-sdk-react-native",
+    "start": "npm run sdk:build && expo start",
+    "android": "npm run sdk:build && expo run:android",
+    "ios": "npm run sdk:build && expo run:ios"
+  },
+  "dependencies": {
+    "@pleistocent/tracive-sdk-extended-react-native": "file:..",
+    "@pleistocent/tracive-sdk-react-native": "file:../..",
+    "expo": "~55.0.31",
+    "expo-constants": "~55.0.0",
+    "expo-crypto": "~55.0.0",
+    "expo-file-system": "~55.0.0",
+    "expo-secure-store": "~55.0.0",
+    "expo-sqlite": "~55.0.0",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.10"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  }
+}

@@ -67,6 +67,41 @@ jobs:
       # step. A NEW high or critical advisory in something that actually ships fails the build.
       - run: npm run audit:runtime
 
+  extended:
+    name: Extended package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tracive-sdk-react-native/extended
+    steps:
+      # Side by side, because `sync:check` compares the pod with a checkout of the Swift SDK beside
+      # this repository.
+      - uses: actions/checkout@v4
+        with:
+          path: tracive-sdk-react-native
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/tracive-sdk-swift
+          path: tracive-sdk-swift
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tracive-sdk-react-native/extended/package-lock.json
+
+      # The base SDK is this checkout, so its types and JavaScript have to exist first.
+      - run: npm ci --ignore-scripts && npm run build
+        working-directory: tracive-sdk-react-native
+
+      # `--legacy-peer-deps` because the two packages share a version, and this job has to pass
+      # before that version is on npm. The peer is linked from this checkout on the next line.
+      - run: npm ci --ignore-scripts --legacy-peer-deps
+      - run: npm run setup:local
+
+      - run: npm run verify
+
 # Not yet in this workflow, and deliberately not faked: the on-device grammar job. A green Jest run
 # proves nothing about the JavaScript engine that actually ships — Jest runs on Node with full ICU.
 # Running the same fixture inside an app on an Android emulator is the only check that can fail for

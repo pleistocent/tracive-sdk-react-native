@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    // Explicit so that the emitted declarations land at lib/typescript/src/**, which is the path
+    // package.json's `types` and `exports` point at.
+    "rootDir": ".",
+    "stripInternal": true
+  },
+  "exclude": ["**/__tests__/**", "example", "lib"]
+}

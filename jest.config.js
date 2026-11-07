@@ -13,6 +13,9 @@ export default {
   // The preset's default matcher treats every file under `__tests__` as a suite, which picks up
   // shared support modules that contain no tests.
   testMatch: ['**/__tests__/**/*.test.ts'],
+  // A package of its own, built against a different React Native: `npm test` there.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/extended/'],
+  modulePathIgnorePatterns: ['<rootDir>/extended/'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/__tests__/**',

@@ -581,6 +581,10 @@ switch (result.type) {
   A Tracive build too old for attachments gets the account only, through the `report/create` link,
   and the result says `attachmentsDelivered: false`.
 
+To let the user report without leaving your app, add
+[`@pleistocent/tracive-sdk-extended-react-native`](https://github.com/pleistocent/tracive-sdk-react-native/tree/main/extended).
+It is a separate package because its native core adds about 6 MB on Android and 7 MB on iOS.
+
 ### iOS: two more query schemes
 
 `LSApplicationQueriesSchemes` needs the two report schemes next to the two app schemes. The Expo config

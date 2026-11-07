@@ -1,0 +1,10 @@
+lib/
+coverage/
+node_modules/
+android/build/**
+ios/build/**
+ios/Frameworks/**
+ios/Synced/**
+ios/Resources/**
+example/android/**
+example/ios/**

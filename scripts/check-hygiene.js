@@ -115,6 +115,7 @@ const TEXT_EXTENSIONS = new Set([
   '.pbxproj',
   '.entitlements',
   '.storyboard',
+  '.strings',
   '.xcprivacy',
 ]);
 
@@ -130,9 +131,20 @@ const ALLOWED_PLEISTOCENT_PATTERNS = [
   // extension-less files surfaced LICENSE on the first run.
   /Copyright \d{4} (?:PT )?Pleistocent(?:[A-Za-z ]*)?(?![A-Za-z0-9._-])/g,
   /com\.pleistocent\.tracive(?:\.[A-Za-z0-9_]+)*(?![A-Za-z0-9._-])/g,
+  // What the extended package's native side depends on, the Maven Local filter its Expo plugin
+  // writes, and where its pod fetches the XCFramework. Exact, so the group with any other artifact
+  // and any other path on the Swift repository still fail.
+  /com\.pleistocent:tracive-sdk-extended-ui(?![A-Za-z0-9._-])/g,
+  /includeGroup\("com\.pleistocent"\)/g,
+  /github\.com\/pleistocent\/tracive-sdk-swift\/releases\/download(?![A-Za-z0-9._-])/g,
   /github\.com\/pleistocent\/tracive-sdk-react-native(\.git)?(?![A-Za-z0-9._-])/g,
   /pleistocent\/tracive-sdk-react-native(?![A-Za-z0-9._-])/g,
+  /pleistocent\/tracive-sdk-extended-react-native(?![A-Za-z0-9._-])/g,
 ];
+
+// Where Indonesian is the content, not the working language of the repository. Only the language
+// rule uses this, so every other rule still reads these files.
+const INDONESIAN_BY_DESIGN = /(^|\/)id\.lproj\//;
 
 const RULES = [
   {
@@ -158,6 +170,15 @@ const RULES = [
     code: 'internal_document_reference',
     pattern: /\b(internal design doc|design doc:|RFC-INT|internal spec)\b/gi,
     message: 'references an internal document',
+  },
+  {
+    code: 'non_english_jargon',
+    // Say "phase 1" / "phase 2". Ordinary Indonesian dictionary words, so publishing them discloses
+    // nothing beyond the existence of the language.
+    pattern:
+      /\b(tahap|rencana|pengguna|laporan|penipuan|penipu|keamanan|kebutuhan|jadwal|catatan|sasaran|anggaran|kuota|pemeriksaan|rekening)\b/gi,
+    exemptPath: INDONESIAN_BY_DESIGN,
+    message: 'Indonesian outside a translation',
   },
 ];
 
@@ -305,6 +326,7 @@ for (const path of walk(ROOT)) {
   const lines = readFileSync(path, 'utf8').split('\n');
   lines.forEach((line, index) => {
     for (const rule of rules) {
+      if (rule.exemptPath?.test(relativePath)) continue;
       rule.pattern.lastIndex = 0;
       const match = rule.pattern.exec(line);
       if (match !== null) {
