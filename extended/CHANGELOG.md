@@ -6,7 +6,9 @@ All notable changes to this package are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.2.1] — 2026-11-07
+## [0.2.2] — 2026-11-08
+
+First release.
 
 ### Added
 
@@ -14,3 +16,6 @@ All notable changes to this package are documented here. The format follows
 - `TraciveReportForm` and `TraciveReportStatus`, Tracive's native screens.
 - `ReportDraft`, with `problems()` and the idempotency key that stops a retry filing twice.
 - An Expo config plugin.
+
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.2

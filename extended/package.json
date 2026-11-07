@@ -1,6 +1,6 @@
 {
   "name": "@pleistocent/tracive-sdk-extended-react-native",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Lets a user report a scammer from inside your app, on Tracive's native form or your own React Native UI, and check that report's status.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/pleistocent/tracive-sdk-react-native/tree/main/extended#readme",
@@ -73,7 +73,7 @@
   },
   "peerDependencies": {
     "@expo/config-plugins": ">=54.0.0",
-    "@pleistocent/tracive-sdk-react-native": ">=0.2.1",
+    "@pleistocent/tracive-sdk-react-native": ">=0.2.2",
     "react-native": ">=0.80.0"
   },
   "peerDependenciesMeta": {

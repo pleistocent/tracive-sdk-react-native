@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-11-08
+
+The version moved with `@pleistocent/tracive-sdk-extended-react-native`, which shares it. Nothing in
+this package changed.
+
 ## [0.2.1] — 2026-11-07
 
 ### Documentation
@@ -847,7 +852,8 @@ First implementation. Not published to npm, and written before the Tracive API w
 - No native code, no autolinking, no podspec.
 - There is no API key in this surface, in either mode.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-react-native/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.2
 [0.2.1]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-react-native/releases/tag/v0.1.0
