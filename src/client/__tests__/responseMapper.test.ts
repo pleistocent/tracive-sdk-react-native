@@ -43,3 +43,63 @@ describe('report months', () => {
     expect(result).not.toHaveProperty('lastReportOn');
   });
 });
+
+describe('QRIS details and the right of reply', () => {
+  const QRIS_HIT = {
+    checkId: 'chk_4d2c0b9a8e7f6a5b4c3d',
+    found: true,
+    riskTier: 'CAUTION',
+    reportTotal: 2,
+    credibleReports: 1,
+    ambiguousReports: 1,
+    firstReportOn: '2026-08',
+    lastReportOn: '2026-09',
+    fraudAmount: { IDR: 350000 },
+    tags: ['barang tidak dikirim'],
+    relatedScammerCount: 0,
+    qris: {
+      merchantName: 'TOKO CONTOH',
+      city: 'JAKARTA',
+      criteria: 'UMI',
+      acquirer: 'ID.DANA.WWW',
+    },
+    rightOfReply: { text: 'Kami pemilik usaha ini.', language: 'id' },
+    billing: { creditSource: 'USER', unitsCharged: 1 },
+    disclaimer:
+      'This information is indicative, based on community reports, and is not a legal verdict. ' +
+      'For a QRIS, show it to the user as a warning before they pay; never use it to block or ' +
+      'hold a payment automatically.',
+  };
+
+  it('decodes both, exactly as sent', () => {
+    const result = decodeCheckResult(QRIS_HIT, 0);
+    expect(result.qris).toEqual({
+      merchantName: 'TOKO CONTOH',
+      city: 'JAKARTA',
+      criteria: 'UMI',
+      acquirer: 'ID.DANA.WWW',
+    });
+    expect(result.rightOfReply).toEqual({ text: 'Kami pemilik usaha ini.', language: 'id' });
+    expect(result.riskTier).toBe('CAUTION');
+  });
+
+  it('carries a criteria it has never seen rather than failing the check', () => {
+    const result = decodeCheckResult({ ...QRIS_HIT, qris: { criteria: 'UXX', city: 7 } }, 0);
+    expect(result.qris).toEqual({ criteria: 'UXX' });
+  });
+
+  it('keeps a reply that names no language, and drops one with no text', () => {
+    expect(
+      decodeCheckResult({ ...QRIS_HIT, rightOfReply: { text: 'Kami pemilik.' } }, 0).rightOfReply,
+    ).toEqual({ text: 'Kami pemilik.', language: '' });
+    expect(
+      decodeCheckResult({ ...QRIS_HIT, rightOfReply: { language: 'id' } }, 0),
+    ).not.toHaveProperty('rightOfReply');
+  });
+
+  it('leaves both absent on a result that is not a QRIS hit', () => {
+    const result = decodeCheckResult(checkResponseBody({ qris: null, rightOfReply: 'text' }), 0);
+    expect(result).not.toHaveProperty('qris');
+    expect(result).not.toHaveProperty('rightOfReply');
+  });
+});

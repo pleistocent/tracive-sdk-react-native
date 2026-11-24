@@ -28,8 +28,20 @@ export type ClientType = (typeof CLIENT_TYPES)[number];
  */
 export type CreditSource = 'USER' | 'PARTNER' | (string & {});
 
-export const QUERY_KINDS = ['PHONE', 'EMAIL', 'BANK', 'CRYPTO', 'USERNAME'] as const;
-export type QueryKind = (typeof QUERY_KINDS)[number];
+/** The kinds this version knows. A later one may still arrive, so {@link QueryKind} is open. */
+export const QUERY_KINDS = ['PHONE', 'EMAIL', 'BANK', 'CRYPTO', 'USERNAME', 'QRIS'] as const;
+
+/**
+ * Open union, like `CreditSource`, so the next identifier type the Tracive API adds is not a
+ * breaking change: a `switch` over it needs a `default`, and keeps compiling when one arrives.
+ */
+export type QueryKind = 'PHONE' | 'EMAIL' | 'BANK' | 'CRYPTO' | 'USERNAME' | 'QRIS' | (string & {});
+
+/**
+ * A QRIS merchant's business size: micro, small, medium, large. Open, because a value this version
+ * has never seen is carried through rather than failing the whole check.
+ */
+export type QrisCriteria = 'UMI' | 'UKE' | 'UME' | 'UBE' | (string & {});
 
 export function isRiskTier(value: unknown): value is RiskTier {
   return typeof value === 'string' && (RISK_TIERS as readonly string[]).includes(value);

@@ -38,6 +38,7 @@ export {
   type CreditSource,
   type Detail,
   type Origin,
+  type QrisCriteria,
   type QueryKind,
   type RiskTier,
   type Source,
@@ -50,6 +51,8 @@ export type { Billing } from './model/Billing';
 export type { Chronology } from './model/Chronology';
 export type { Comment } from './model/Comment';
 export { toCacheableCopy, type CheckResult } from './model/CheckResult';
+export type { QrisDetails } from './model/QrisDetails';
+export type { RightOfReply } from './model/RightOfReply';
 export type { CreditsInfo } from './model/CreditsInfo';
 export type { ProfileInfo } from './model/ProfileInfo';
 export { CachePolicy } from './model/CachePolicy';

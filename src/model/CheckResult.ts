@@ -2,6 +2,8 @@ import type { Billing } from './Billing';
 import type { Chronology } from './Chronology';
 import type { Comment } from './Comment';
 import type { Origin, RiskTier } from './enums';
+import type { QrisDetails } from './QrisDetails';
+import type { RightOfReply } from './RightOfReply';
 
 export interface CheckResult {
   /** Absent on a cache hit: nothing was checked, so there is no check to identify. */
@@ -32,6 +34,13 @@ export interface CheckResult {
   readonly topChronologies?: readonly Chronology[];
   /** `detail: 'full'` only. */
   readonly comments?: readonly Comment[];
+  /** A QRIS hit only, at either detail level. */
+  readonly qris?: QrisDetails;
+  /**
+   * A QRIS hit whose owner replied, at either detail level. Show it below the warning, as written
+   * and untranslated.
+   */
+  readonly rightOfReply?: RightOfReply;
   /** Absent on a cache hit, because a hit is free. */
   readonly billing?: Billing;
   /** Legal text that MUST be surfaced in any UI built on this result. */
@@ -56,6 +65,9 @@ export interface CheckResult {
  * rule — only a `minimal` result is ever written, and `minimal` is the one detail level that sends
  * no locale. If a future version ever caches full detail, the cache key must become
  * `(query, detail, locale)` first: a `minimal` result must never satisfy a `full` request.
+ *
+ * `qris` and `rightOfReply` are kept: a replayed QRIS warning must still carry the owner's reply,
+ * and neither is ever translated.
  */
 /**
  * The projection that is safe to keep against a transaction.
@@ -85,6 +97,8 @@ export function toTransactionRecordCopy(result: CheckResult): CheckResult {
     fraudAmount: result.fraudAmount,
     tags: result.tags,
     relatedScammerCount: result.relatedScammerCount,
+    ...(result.qris !== undefined ? { qris: result.qris } : {}),
+    ...(result.rightOfReply !== undefined ? { rightOfReply: result.rightOfReply } : {}),
     ...(result.billing !== undefined ? { billing: result.billing } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     origin: result.origin,
@@ -104,6 +118,8 @@ export function toCacheableCopy(result: CheckResult): CheckResult {
     fraudAmount: result.fraudAmount,
     tags: result.tags,
     relatedScammerCount: result.relatedScammerCount,
+    ...(result.qris !== undefined ? { qris: result.qris } : {}),
+    ...(result.rightOfReply !== undefined ? { rightOfReply: result.rightOfReply } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     origin: 'CACHE',
     fetchedAt: result.fetchedAt,

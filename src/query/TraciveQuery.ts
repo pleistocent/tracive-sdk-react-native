@@ -11,6 +11,7 @@ import {
   foldPlatform,
 } from './folding';
 import { bankCodeByBic, bankCodeByShortCode } from './bankCodes';
+import { foldQrisNmid, foldQrisPan, foldQrisPayload } from './qris';
 import { isValidRecordKey } from './recordKeyGuard';
 import { TraciveQueryError } from './TraciveQueryError';
 
@@ -27,7 +28,7 @@ function assertValidRecordKey(key: string): string {
  * bag rather than positional strings so that a call site cannot silently transpose two arguments
  * of the same type.
  *
- * There is deliberately no `domain()` factory. The Tracive API indexes exactly five identifier
+ * There is deliberately no `domain()` factory. The Tracive API indexes exactly six identifier
  * types, so a domain key would match nothing and the miss would still cost a credit. Domain
  * checking is planned for a future release built on vector similarity search, which does not fit
  * exact-match record keys; adding it later is not a breaking change.
@@ -122,6 +123,45 @@ export class TraciveQuery {
     const platform = foldPlatform(input.platform);
     const handle = foldHandle(input.handle);
     return new TraciveQuery('USERNAME', assertValidRecordKey(`USERNAME_${platform}_${handle}`));
+  }
+
+  /**
+   * A QRIS, from the text a QR decoder returned. The key is the NMID inside it, so this builds
+   * exactly the key {@link TraciveQuery.qrisNmid} builds for that NMID and shares its cache entries.
+   *
+   * Only organisations whose agreement with Tracive covers QRIS may check one; any other gets
+   * `unsupportedInputType`. Show the answer as a warning before the user pays, and never block or
+   * hold a payment on it.
+   *
+   * @throws {TraciveQueryError} `not_a_qris`, `qris_crc_mismatch` (the QR was edited or misread),
+   *   `qris_no_nmid` or `qris_not_indexed` (not a micro or small business, so never in Tracive's
+   *   reports), before any request, so none of them is billed.
+   */
+  static qris(payload: string): TraciveQuery {
+    return new TraciveQuery('QRIS', assertValidRecordKey(`QRIS_${foldQrisPayload(payload)}`));
+  }
+
+  /**
+   * A QRIS by the NMID printed on the merchant's sticker, e.g. `ID1020000000033`. Spaces are
+   * ignored and case does not matter.
+   *
+   * @throws {TraciveQueryError} `not_an_nmid` when it is not `ID` and 13 digits.
+   */
+  static qrisNmid(nmid: string): TraciveQuery {
+    return new TraciveQuery('QRIS', assertValidRecordKey(`QRIS_${foldQrisNmid(nmid)}`));
+  }
+
+  /**
+   * A QRIS by its merchant PAN: the 18 digits in the QR, or the 19 a receipt prints (the 18 plus a
+   * Luhn check digit, which is dropped).
+   *
+   * The server maps a PAN to its NMID after charging for the check, and a PAN it has never seen is
+   * a billed miss. The local cache keeps the PAN key and the NMID key as two separate entries.
+   *
+   * @throws {TraciveQueryError} `not_a_pan` when it is neither.
+   */
+  static qrisPan(pan: string): TraciveQuery {
+    return new TraciveQuery('QRIS', assertValidRecordKey(`QRIS_${foldQrisPan(pan)}`));
   }
 
   equals(other: TraciveQuery): boolean {

@@ -2,6 +2,8 @@ import type { Billing } from '../model/Billing';
 import { CachePolicy } from '../model/CachePolicy';
 import type { CheckResult } from '../model/CheckResult';
 import { isRiskTier } from '../model/enums';
+import { decodeQrisDetails, type QrisDetails } from '../model/QrisDetails';
+import { decodeRightOfReply, type RightOfReply } from '../model/RightOfReply';
 import { toYearMonth } from '../model/yearMonth';
 import { CheckCacheError } from './CheckCacheError';
 
@@ -24,6 +26,9 @@ interface StoredResult {
   fraudAmount: Record<string, number>;
   tags: string[];
   relatedScammerCount: number;
+  /** Absent from rows written before 0.3.0, which still decode. */
+  qris?: QrisDetails;
+  rightOfReply?: RightOfReply;
   disclaimer?: string;
   fetchedAtMs: number;
 }
@@ -40,6 +45,8 @@ export function encodeCacheableResult(result: CheckResult): string {
     fraudAmount: { ...result.fraudAmount },
     tags: [...result.tags],
     relatedScammerCount: result.relatedScammerCount,
+    ...(result.qris !== undefined ? { qris: { ...result.qris } } : {}),
+    ...(result.rightOfReply !== undefined ? { rightOfReply: { ...result.rightOfReply } } : {}),
     ...(result.disclaimer !== undefined ? { disclaimer: result.disclaimer } : {}),
     fetchedAtMs: result.fetchedAt.getTime(),
   };
@@ -74,6 +81,8 @@ export function decodeCacheableResult(json: string): CheckResult {
       'The cache record is missing a field this SDK version requires.',
     );
   }
+  const qris = decodeQrisDetails(parsed.qris);
+  const rightOfReply = decodeRightOfReply(parsed.rightOfReply);
   return {
     found: parsed.found,
     riskTier: parsed.riskTier,
@@ -85,6 +94,8 @@ export function decodeCacheableResult(json: string): CheckResult {
     fraudAmount: parsed.fraudAmount ?? {},
     tags: parsed.tags ?? [],
     relatedScammerCount: parsed.relatedScammerCount ?? 0,
+    ...(qris !== undefined ? { qris } : {}),
+    ...(rightOfReply !== undefined ? { rightOfReply } : {}),
     ...(parsed.disclaimer !== undefined ? { disclaimer: parsed.disclaimer } : {}),
     // A replay is always labelled as one, whatever the stored bytes claim.
     origin: 'CACHE',
