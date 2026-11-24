@@ -6,6 +6,13 @@ All notable changes to this package are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0]
+
+### Changed
+
+- Tracive's form shows a QRIS identifier as `QRIS · <NMID>`.
+- Needs `@pleistocent/tracive-sdk-react-native` 0.3.0 or newer, which adds the QRIS query builders.
+
 ## [0.2.2] — 2026-11-08
 
 First release.

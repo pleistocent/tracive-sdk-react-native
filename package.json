@@ -1,6 +1,6 @@
 {
   "name": "@pleistocent/tracive-sdk-react-native",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Check a phone number, e-mail, bank account, crypto address, social handle or QRIS against Tracive's scam reports. Phase 1 is OAuth-only.",
   "license": "Apache-2.0",
   "homepage": "https://tracive.id",
