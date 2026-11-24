@@ -144,8 +144,12 @@ still passes.
 **Do not retry a check without an idempotency key.** The SDK cannot tell whether the first attempt
 was charged, so a blind retry risks a double charge.
 
-**Do not add a `domain()` query builder.** The Tracive API indexes five identifier types; a domain
+**Do not add a `domain()` query builder.** The Tracive API indexes six identifier types; a domain
 key would match nothing, and a miss is still billed.
+
+**Do not move the QRIS folds onto `trim()` or `\s`.** They are the one place the reference behaviour
+is not JavaScript's own: the server spells their space set out as tab, LF, CR, space and U+00A0, and
+`qris-nmid-em-space` fails the day `trim()`'s 25 code points creep in.
 
 **Do not add an API key parameter anywhere, in either mode.** A test asserts its absence from the
 exported names, from every outgoing request field and header, and from the source itself.

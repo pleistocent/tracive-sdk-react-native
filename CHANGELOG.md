@@ -6,6 +6,45 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0]
+
+**QRIS checks, and one breaking change: `QueryKind` is now an open union.** See Changed for the
+one-line migration.
+
+### Added
+
+- **`TraciveQuery.qris(payload)`, `.qrisNmid(nmid)` and `.qrisPan(pan)`** check a QRIS, Indonesia's
+  national merchant QR. Only organisations whose agreement with Tracive covers QRIS may use them;
+  any other gets 400 `unsupported_input_type`, which surfaces as `unsupportedInputType`.
+  - `qris` takes the text a QR decoder returned and keys on the NMID inside it. It refuses, before
+    any request and so without a charge, a QR that is not a QRIS (`not_a_qris`), one whose CRC
+    fails because it was edited or misread (`qris_crc_mismatch`), one with no NMID
+    (`qris_no_nmid`), and one from anything but a micro or small business (`qris_not_indexed`),
+    which is never in Tracive's reports.
+  - `qrisNmid` takes the NMID on the merchant's sticker (`not_an_nmid` otherwise). `qrisPan` takes
+    the 18-digit PAN, or the 19 digits a receipt prints with a Luhn check digit (`not_a_pan`
+    otherwise). The server maps a PAN to its NMID after the charge, so an unknown PAN is a billed
+    miss, and the cache keeps the PAN key and the NMID key as two entries.
+  - Show the answer as a warning before the user pays. Never block or hold a payment on it.
+- **`CheckResult.qris`** (`QrisDetails`: `merchantName`, `city`, `criteria`, `acquirer`) and
+  **`CheckResult.rightOfReply`** (`RightOfReply`: `text`, `language`) on a QRIS hit, at both detail
+  levels. Show `rightOfReply.text` below the warning, as written and untranslated. `criteria` is a
+  `QrisCriteria`, an open union, so a value this version does not know is carried through. Both are
+  kept in the encrypted cache and in transaction records; a row written by 0.2.x still reads.
+- The example app checks a QRIS: a preset with the sandbox's test QR, and one with an NMID whose
+  owner has replied.
+
+### Changed
+
+- **Breaking: `QueryKind` is an open union**: the six known kinds plus `(string & {})`, like
+  `CreditSource`. This is the last time a new identifier type breaks a build: a
+  `switch (query.kind)` now needs a `default` branch, and keeps compiling when the Tracive API adds
+  the next type. To migrate, replace an exhaustiveness check such as
+  `const unreachable: never = query.kind` with a fallback branch. `QUERY_KINDS` gains `'QRIS'`.
+- `QueryRejectionReason` gains `not_a_qris`, `qris_crc_mismatch`, `qris_no_nmid`,
+  `qris_not_indexed`, `not_an_nmid` and `not_a_pan`. An exhaustive `switch` over it needs them.
+- The shared grammar fixture is version 7, with the QRIS vectors.
+
 ## [0.2.2] — 2026-11-08
 
 The version moved with `@pleistocent/tracive-sdk-extended-react-native`, which shares it. Nothing in

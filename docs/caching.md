@@ -135,6 +135,15 @@ The first two are free-text reports about third parties and do not belong in a p
 database. `billing` describes one transaction and would be a lie if replayed. `checkId` identifies a
 check that a cache hit did not perform.
 
+A QRIS hit's `qris` and `rightOfReply` **are** kept. A replayed QRIS warning must still carry the
+owner's reply beside it, and neither field is ever translated, so the locale rule below does not
+touch them. A row written before 0.3.0 has neither field and still reads.
+
+**A QRIS PAN and its NMID are two entries.** The row key is the hash of the key you sent, and the
+server maps a PAN to its NMID only after the charge, so the SDK cannot know they name one merchant.
+A check by PAN after one by NMID, or the reverse, is a second billed check. `TraciveQuery.qris` on a
+payload builds the NMID's key and shares its entry.
+
 **Only `detail: 'minimal'` results are cached, and the rule is enforced on both sides.** A single
 `cacheApplies` flag — `detail === 'minimal'`, decided once per check — gates the `CACHE` read, the
 `CACHE_FIRST` read, every write and the `SERVER_FIRST` fallback, so the read side and the write side
