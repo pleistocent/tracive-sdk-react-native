@@ -47,6 +47,10 @@ to the SDK's native code, run the script again rather than only reloading the bu
    chooses that build: **Sandbox** (the default), **Production**, or **Dev build (QA)**, an explicit
    `target` for a Tracive QA build the SDK does not know. Expect `installPageOpened` when that build
    is missing, and `opened` with `attachmentsDelivered: false` when it predates report packages.
+6. **A QRIS check.** The QRIS chip swaps the phone field for a QR payload, an NMID or a PAN, with two
+   presets from the sandbox's test accounts: a HIGH QR, and an NMID whose owner has replied. The
+   reply appears below the disclaimer, as written. In the sandbox flavor it needs a client whose
+   agreement covers QRIS; any other gets `unsupportedInputType`.
 
 ## Three flavors
 

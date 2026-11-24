@@ -78,6 +78,10 @@ function buildQuery(type: string, input: Record<string, unknown>): TraciveQuery 
       return TraciveQuery.crypto({ chain: text('chain'), address: text('address') });
     case 'USERNAME':
       return TraciveQuery.username({ platform: text('platform'), handle: text('handle') });
+    case 'QRIS':
+      if ('payload' in input) return TraciveQuery.qris(text('payload'));
+      if ('nmid' in input) return TraciveQuery.qrisNmid(text('nmid'));
+      return TraciveQuery.qrisPan(text('pan'));
     default:
       throw new Error(`No public factory drives a ${type} vector`);
   }

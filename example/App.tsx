@@ -15,6 +15,8 @@
  *     one check in the whole design that can fail for the reason the fixtures exist.
  *   * `openReportForm` from a mock transaction detail (`src/ReportScammer.tsx`): the Tracive
  *     report form opened with the account, the date and two receipts already filled in.
+ *   * A QRIS check, preset to the sandbox's test QR, with the owner's `rightOfReply` shown below
+ *     the warning, as written.
  *
  * THREE FLAVORS (src/flavor.ts). `demo`, the default, answers every call in-process from
  * `DemoBackend`, injected as the client's `transport`, so the app runs on a first clone with no
@@ -78,6 +80,21 @@ const OAUTH_CONFIG: OAuthConfiguration = {
 
 const COUNTRIES = ['IDN', 'USA', 'ITA'] as const;
 type Country = (typeof COUNTRIES)[number];
+
+type Mode = 'PHONE' | 'QRIS';
+
+// The sandbox's fixed QRIS test accounts: a HIGH QR, and an NMID whose owner has replied. The demo
+// flavor answers them too.
+const QRIS_PRESETS = [
+  {
+    label: 'Sandbox QR · HIGH',
+    value:
+      '00020101021126550011ID.DANA.WWW01189360999900000201000207SBX00010303UMI51440014ID.CO.QRIS.WWW' +
+      '0215ID99000000002010303UMI5204581253033605802ID5920SANDBOX SAMPLE STORE6007BANDUNG6105401116304' +
+      '1DFD',
+  },
+  { label: 'NMID · owner replied', value: 'ID9900000000203' },
+] as const;
 
 interface Session {
   readonly client: TraciveClient;
@@ -161,6 +178,7 @@ async function openSession(flavor: Flavor): Promise<Session> {
 export default function App() {
   const [session, setSession] = useState<Session | undefined>();
   const [startupError, setStartupError] = useState<string | undefined>();
+  const [mode, setMode] = useState<Mode>('PHONE');
   const [country, setCountry] = useState<Country>('IDN');
   const [input, setInput] = useState('0857-1860-9079');
   const [busy, setBusy] = useState(false);
@@ -196,16 +214,23 @@ export default function App() {
    */
   const folded = useMemo(() => {
     try {
+      if (mode === 'QRIS') return { e164: undefined, query: qrisQuery(input), reason: undefined };
       const e164 = normalizePhoneNumber(country, input);
-      return { e164, key: TraciveQuery.phone(e164).searchQueryIndex, reason: undefined };
+      return { e164, query: TraciveQuery.phone(e164), reason: undefined };
     } catch (cause) {
       return {
         e164: undefined,
-        key: undefined,
+        query: undefined,
         reason: isTraciveQueryError(cause) ? cause.reason : 'unknown',
       };
     }
-  }, [country, input]);
+  }, [mode, country, input]);
+
+  const switchMode = useCallback((next: Mode) => {
+    setMode(next);
+    setInput(next === 'QRIS' ? QRIS_PRESETS[0].value : '0857-1860-9079');
+    setResult(undefined);
+  }, []);
 
   // The live flavors' OAuth wiring. Started once per session: the listener also picks up the link
   // that cold-started the app, which is how a flow survives the OS killing this process while the
@@ -252,12 +277,11 @@ export default function App() {
   }, []);
 
   const check = useCallback(async () => {
-    if (session === undefined || folded.e164 === undefined) return;
+    if (session === undefined || folded.query === undefined) return;
     setBusy(true);
     setError(undefined);
     try {
-      const query = TraciveQuery.phone(folded.e164);
-      setResult(await session.client.checkScammer(query));
+      setResult(await session.client.checkScammer(folded.query));
     } catch (cause) {
       setResult(undefined);
       setError(
@@ -271,7 +295,7 @@ export default function App() {
       await refreshCounters(session);
       setBusy(false);
     }
-  }, [folded.e164, refreshCounters, session]);
+  }, [folded.query, refreshCounters, session]);
 
   const clearCache = useCallback(async () => {
     if (session === undefined) return;
@@ -336,42 +360,84 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>1 · An identifier, as a person would write it</Text>
           <View style={styles.row}>
-            {COUNTRIES.map((code) => (
+            {(['PHONE', 'QRIS'] as const).map((option) => (
               <Pressable
-                key={code}
-                onPress={() => setCountry(code)}
-                style={[styles.chip, country === code && styles.chipOn]}
+                key={option}
+                onPress={() => switchMode(option)}
+                style={[styles.chip, mode === option && styles.chipOn]}
               >
-                <Text style={[styles.chipText, country === code && styles.chipTextOn]}>{code}</Text>
+                <Text style={[styles.chipText, mode === option && styles.chipTextOn]}>
+                  {option === 'PHONE' ? 'Phone' : 'QRIS'}
+                </Text>
               </Pressable>
             ))}
           </View>
+          {mode === 'PHONE' ? (
+            <View style={styles.row}>
+              {COUNTRIES.map((code) => (
+                <Pressable
+                  key={code}
+                  onPress={() => setCountry(code)}
+                  style={[styles.chip, country === code && styles.chipOn]}
+                >
+                  <Text style={[styles.chipText, country === code && styles.chipTextOn]}>
+                    {code}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <>
+              <View style={styles.row}>
+                {QRIS_PRESETS.map((preset) => (
+                  <Pressable
+                    key={preset.label}
+                    onPress={() => setInput(preset.value)}
+                    style={[styles.chip, input === preset.value && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, input === preset.value && styles.chipTextOn]}>
+                      {preset.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                A QR payload, an NMID or a PAN. Only for organisations whose agreement covers QRIS;
+                any other gets unsupportedInputType.
+              </Text>
+            </>
+          )}
           <TextInput
             value={input}
             onChangeText={setInput}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="phone-pad"
+            keyboardType={mode === 'PHONE' ? 'phone-pad' : 'default'}
             style={styles.input}
-            placeholder="0857-1860-9079"
+            placeholder={mode === 'PHONE' ? '0857-1860-9079' : 'QR payload, NMID or PAN'}
           />
-          <Label text="E.164" />
-          <Text style={folded.e164 === undefined ? styles.failure : styles.mono}>
-            {folded.e164 ?? `rejected locally · ${folded.reason} · nothing sent, nothing billed`}
-          </Text>
+          {mode === 'PHONE' ? (
+            <>
+              <Label text="E.164" />
+              <Text style={folded.e164 === undefined ? styles.failure : styles.mono}>
+                {folded.e164 ?? '—'}
+              </Text>
+            </>
+          ) : null}
           <Label text="Folded lookup key" />
-          <Text style={folded.key === undefined ? styles.failure : styles.mono}>
-            {folded.key ?? '—'}
+          <Text style={folded.query === undefined ? styles.failure : styles.mono}>
+            {folded.query?.searchQueryIndex ??
+              `rejected locally · ${folded.reason} · nothing sent, nothing billed`}
           </Text>
         </View>
 
         <View style={styles.row}>
           <Pressable
             onPress={check}
-            disabled={busy || session === undefined || folded.e164 === undefined}
+            disabled={busy || session === undefined || folded.query === undefined}
             style={[
               styles.button,
-              (busy || session === undefined || folded.e164 === undefined) && styles.buttonOff,
+              (busy || session === undefined || folded.query === undefined) && styles.buttonOff,
             ]}
           >
             <Text style={styles.buttonText}>{busy ? 'Checking…' : 'Check'}</Text>
@@ -381,7 +447,7 @@ export default function App() {
           </Pressable>
         </View>
         <Text style={styles.hint}>
-          Press Check twice with the same number: the second answer is served from the cache
+          Press Check twice with the same identifier: the second answer is served from the cache
           {session?.backend !== undefined ? ', and the call counter below does not move.' : '.'}
         </Text>
 
@@ -424,6 +490,15 @@ export default function App() {
       </ScrollView>
     </View>
   );
+}
+
+// The sample guesses which of the three was typed. Your UI knows: it scanned a QR, or asked for
+// the NMID on the sticker.
+function qrisQuery(text: string): TraciveQuery {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('000201')) return TraciveQuery.qris(text);
+  if (/^id/i.test(trimmed)) return TraciveQuery.qrisNmid(text);
+  return TraciveQuery.qrisPan(text);
 }
 
 function describeAuthResult(result: AuthResult): string {
@@ -486,10 +561,23 @@ function Verdict({ result }: { result: CheckResult }) {
         value={result.fetchedAt.toISOString()}
         note="The age of the data, not of the answer."
       />
+      {result.qris?.merchantName !== undefined ? (
+        <Fact
+          label="QRIS merchant"
+          value={[result.qris.merchantName, result.qris.city].filter(Boolean).join(' · ')}
+        />
+      ) : null}
       {result.disclaimer !== undefined ? (
         <View style={styles.disclaimer}>
           <Text style={styles.disclaimerLabel}>Disclaimer</Text>
           <Text style={styles.disclaimerText}>{result.disclaimer}</Text>
+        </View>
+      ) : null}
+      {result.rightOfReply !== undefined ? (
+        // Below the warning, verbatim and untranslated.
+        <View style={styles.reply}>
+          <Text style={styles.replyLabel}>The QRIS owner replied</Text>
+          <Text style={styles.replyText}>{result.rightOfReply.text}</Text>
         </View>
       ) : null}
     </View>
@@ -620,5 +708,15 @@ const styles = StyleSheet.create({
   },
   disclaimerLabel: { fontSize: 11, fontWeight: '700', color: '#B54708', letterSpacing: 0.5 },
   disclaimerText: { fontSize: 12, color: '#7A2E0E', lineHeight: 17 },
+  reply: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#98A2B3',
+    backgroundColor: '#F9FAFB',
+    padding: 10,
+    borderRadius: 6,
+    gap: 4,
+  },
+  replyLabel: { fontSize: 11, fontWeight: '700', color: '#475467', letterSpacing: 0.5 },
+  replyText: { fontSize: 13, color: '#101828', lineHeight: 18 },
   failure: { fontSize: 12, color: '#B42318', lineHeight: 17 },
 });
