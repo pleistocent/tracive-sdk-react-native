@@ -21,8 +21,8 @@ import { readFileSync } from 'node:fs';
 const FIXTURES = [
   {
     path: 'test/fixtures/query-grammar-vectors.json',
-    sha256: 'eed40d8e2a99f9a43fcc72668d060f9ec69a031265cb6be62ff78a55987eec41',
-    bytes: 40765,
+    sha256: 'eaaf43a350712732454a764013e81df4ac2d9b7ba27ca3c38d42d3ccc7c67dc5',
+    bytes: 41790,
     name: 'grammar',
   },
   {

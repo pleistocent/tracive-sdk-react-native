@@ -74,8 +74,8 @@ describe('shared grammar fixture', () => {
 
   it('carries the expected number of vectors and rejections', () => {
     // Pinned so that a fixture update that silently drops a case cannot pass unnoticed.
-    expect(fixture.vectors).toHaveLength(60);
-    expect(fixture.rejected).toHaveLength(36);
+    expect(fixture.vectors).toHaveLength(61);
+    expect(fixture.rejected).toHaveLength(37);
     expect(fixture.documentIdGuard.cases).toHaveLength(9);
   });
 });
