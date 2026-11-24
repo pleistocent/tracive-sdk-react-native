@@ -82,6 +82,23 @@ describe('the persisted payload', () => {
     expect(restored.origin).toBe('CACHE');
   });
 
+  it('round-trips the QRIS details and the right of reply', () => {
+    const qris = { merchantName: 'TOKO CONTOH', city: 'JAKARTA', criteria: 'UMI', acquirer: 'X' };
+    const rightOfReply = { text: 'Kami pemilik usaha ini.', language: 'id' };
+    const restored = decodeCacheableResult(encodeCacheableResult(result({ qris, rightOfReply })));
+    expect(restored.qris).toEqual(qris);
+    expect(restored.rightOfReply).toEqual(rightOfReply);
+  });
+
+  it('reads a row written before 0.3.0, which has neither QRIS field', () => {
+    const restored = decodeCacheableResult(
+      JSON.stringify({ found: true, riskTier: 'HIGH', tags: ['a'], fetchedAtMs: 0 }),
+    );
+    expect(restored.riskTier).toBe('HIGH');
+    expect(restored).not.toHaveProperty('qris');
+    expect(restored).not.toHaveProperty('rightOfReply');
+  });
+
   it('reads report months from a row an earlier build stored as instants', () => {
     const legacy = JSON.stringify({
       found: true,

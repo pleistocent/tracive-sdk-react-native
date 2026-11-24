@@ -444,12 +444,29 @@ flowchart TD
   U1 --> U2["handle: NFC, lowercase, trim. A leading at-sign is KEPT."]
   U2 --> UKey["USERNAME_ platform and handle, joined by an underscore"]
 
+  Factory -->|"qris"| Q1["trim tab, LF, CR, space and U+00A0 from the ends"]
+  Q1 --> Q2{"starts 000201, TLV framing holds, ends in tag 63?"}
+  Q2 -->|"no"| QErr1["TraciveQueryError not_a_qris"]
+  Q2 -->|"yes"| Q3{"CRC-16 over the UTF-8 bytes matches?"}
+  Q3 -->|"no"| QErr2["TraciveQueryError qris_crc_mismatch"]
+  Q3 -->|"yes"| Q4{"tag 51 holds an NMID?"}
+  Q4 -->|"no"| QErr3["TraciveQueryError qris_no_nmid"]
+  Q4 -->|"yes"| Q5{"criteria UMI or UKE?"}
+  Q5 -->|"no"| QErr4["TraciveQueryError qris_not_indexed"]
+  Q5 -->|"yes"| QKey["QRIS_ then the NMID"]
+  Factory -->|"qrisNmid"| N1["remove every tab, LF, CR, space and U+00A0, uppercase, ID and 13 digits"]
+  N1 --> QKey
+  Factory -->|"qrisPan"| A1["remove the same spaces: 18 digits, or 19 with a valid Luhn digit"]
+  A1 --> AKey["QRIS_ then the 18-digit PAN"]
+
   PKey --> Final{"isValidRecordKey?"}
   EKey --> Final
   IKey --> Final
   BKey --> Final
   CKey --> Final
   UKey --> Final
+  QKey --> Final
+  AKey --> Final
 
   Final -->|"no"| FErr["TraciveQueryError invalid_document_id"]
   Final -->|"yes"| Index["query.searchQueryIndex, sent on the wire"]
@@ -467,6 +484,11 @@ Notes that are easy to get wrong, and that the shared fixture pins:
   `0X...` is deliberately not folded.
 - **A leading at-sign on a handle is kept**, because the server preserves it. Stripping it here
   would build a key that misses a report filed with it.
+- **The QRIS folds do not use `trim()` or `\s`.** Their space set is exactly tab, LF, CR, space and
+  U+00A0, so an NMID containing U+2003 is refused rather than folded. TLV lengths count UTF-16 code
+  units (`String.length`), while the CRC runs over the UTF-8 bytes.
+- **A QRIS PAN keeps its own key.** The server maps it to the NMID after the charge, so the PAN key
+  and the NMID key are two cache entries.
 - **Phone numbers must already be E.164** (`^\+[1-9][0-9]{6,14}$` after stripping). The server does
   not up-convert a local number, so `081234567891` would become a different entity, miss, and still
   be billed.

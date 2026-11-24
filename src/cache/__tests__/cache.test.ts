@@ -49,6 +49,14 @@ describe('toCacheableCopy', () => {
     expect(copy.disclaimer).toBe('legal text');
     expect(copy.fetchedAt.getTime()).toBe(1_700_000_000_000);
   });
+
+  it("keeps a QRIS hit's details and its owner's reply", () => {
+    const qris = { merchantName: 'TOKO CONTOH', criteria: 'UMI' };
+    const rightOfReply = { text: 'Kami pemilik usaha ini.', language: 'id' };
+    const copy = toCacheableCopy(result({ qris, rightOfReply }));
+    expect(copy.qris).toEqual(qris);
+    expect(copy.rightOfReply).toEqual(rightOfReply);
+  });
 });
 
 describe('CachePolicy TTLs', () => {
@@ -229,6 +237,17 @@ describe('PersistentCheckCache', () => {
     expect(read?.riskTier).toBe('HIGH');
     expect(read?.origin).toBe('CACHE');
     expect(read?.billing).toBeUndefined();
+  });
+
+  it('round-trips the QRIS details and the right of reply through the encrypted store', async () => {
+    const { cache } = build();
+    const qris = { merchantName: 'TOKO CONTOH', city: 'JAKARTA', criteria: 'UMI' };
+    const rightOfReply = { text: 'Kami pemilik usaha ini.', language: 'id' };
+    await cache.write(result({ qris, rightOfReply }), KEY);
+
+    const read = await cache.read(KEY);
+    expect(read?.qris).toEqual(qris);
+    expect(read?.rightOfReply).toEqual(rightOfReply);
   });
 
   it('deletes the row and reports a miss when the payload cannot be opened', async () => {

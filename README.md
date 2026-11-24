@@ -1,7 +1,7 @@
 # @pleistocent/tracive-sdk-react-native
 
-Check a phone number, e-mail address, bank account, IBAN, crypto address or social handle against
-Tracive's community scam reports, from a React Native or Expo app.
+Check a phone number, e-mail address, bank account, IBAN, crypto address, social handle or QRIS
+against Tracive's community scam reports, from a React Native or Expo app.
 
 The public surface mirrors the Tracive SDKs for Kotlin Multiplatform, Flutter and Swift 1:1, and
 all four share a byte-identical test fixture for the lookup-key grammar so they cannot drift apart.
@@ -335,10 +335,11 @@ grant is stored: either nobody has authorized yet, or the stored record has neit
 nor a refresh token left. Nothing reaches the server on that path, so nothing is billed. Send the
 user through `authorize()`.
 
-Three more are about your contract or quota rather than your code:
+Four more are about your contract or quota rather than your code:
 
 | `error.kind`              | When                                                                                                                                                                                                            | What to do                                                                                             |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `unsupportedInputType`    | 400 on a QRIS check: your agreement with Tracive does not cover QRIS                                                                                                                                            | contact Tracive; retrying will not help                                                                |
 | `userCreditNotPermitted`  | 403 on a check: your contract does not let you charge the user's subscription credits                                                                                                                           | contact Tracive; retrying will not help                                                                |
 | `translationNotPermitted` | 403 on a `detail: 'full'` check with a non-English `locale`: your contract withholds translation, or the user has no premium subscription                                                                       | check again without `locale` for the English result                                                    |
 | `rateLimited`             | 429. When `error.isDailyQuotaExceeded` is `true`, a daily allowance is spent (the connection's daily quota, its account reads, or the sandbox org cap) and `retryAfterSeconds` points at the reset at 00:00 UTC | never retried by the SDK; wait `retryAfterSeconds`, and for the daily quota tell the user to try later |
@@ -349,7 +350,7 @@ one unexplained refresh before the call you actually made. That state is reachab
 write, an interrupted save, or a restored backup, and the alternative would be to send the user back
 through consent to replace a credential that never stopped working.
 
-### The five identifier types
+### The six identifier types
 
 ```ts
 TraciveQuery.phone('+6281234567891'); // E.164 only — see below
@@ -358,7 +359,15 @@ TraciveQuery.bankAccount({ countryAlpha3: 'IDN', bankCode: 'BCA', account: '3242
 TraciveQuery.iban('DE89 3704 0044 0532 0130 00');
 TraciveQuery.crypto({ chain: 'ETH', address: '0x52908400098527886E0F7030069857D2E4169EE7' });
 TraciveQuery.username({ platform: 'INSTAGRAM', handle: '@ScammerX' });
+TraciveQuery.qris(scannedText); // the text a QR decoder returned — see QRIS below
+TraciveQuery.qrisNmid('ID1020000000033');
+TraciveQuery.qrisPan('936009143100000003');
 ```
+
+`query.kind` is a `QueryKind`: `'PHONE'`, `'EMAIL'`, `'BANK'`, `'CRYPTO'`, `'USERNAME'` or `'QRIS'`
+today, and an open union, so a `switch` over it needs a `default` branch. That is what keeps the
+next type the Tracive API adds from breaking your build. `QUERY_KINDS` lists the ones this version
+knows.
 
 `bankAccount` also takes the bank the way your own records may already name it — the national bank
 code or the BIC — in place of `bankCode`:
@@ -388,8 +397,38 @@ reason `not_an_email`. The check is deliberately nothing more than that — a st
 would start refusing addresses the server would have matched, and a refused lookup is an answer you
 never get.
 
+### QRIS
+
+**Only for organisations whose agreement with Tracive covers QRIS.** Any other gets 400
+`unsupported_input_type`, which surfaces as `error.kind === 'unsupportedInputType'`.
+
+```ts
+const query = TraciveQuery.qris(scannedText); // or qrisNmid(...), qrisPan(...)
+const result = await client.checkScammer(query);
+```
+
+- **A warning, never a block.** Show the result to the user before they pay. Never block, hold or
+  cancel a payment on it automatically. The `disclaimer` of a QRIS check says so too.
+- **`qris(payload)`** reads the NMID out of the QR and checks it locally first, so none of these is
+  billed: `not_a_qris`, `qris_crc_mismatch` (the QR was edited or misread: tell the user it is not
+  intact, not that it is unreported), `qris_no_nmid`, and `qris_not_indexed`. Only micro and small
+  businesses (UMI, UKE) are ever in Tracive's reports, so any other QR could only be a billed miss.
+  A dynamic QR is fine: the merchant behind it can be checked.
+- **`qrisNmid(nmid)`** takes the NMID printed on the merchant's sticker. Spaces and case are ignored;
+  anything but `ID` and 13 digits is `not_an_nmid`.
+- **`qrisPan(pan)`** takes the merchant PAN: 18 digits, or the 19 a receipt prints, whose last digit
+  is a Luhn check digit and is dropped. Anything else is `not_a_pan`. The server maps a PAN to its
+  NMID **after** charging for the check, so a PAN it has never seen is a billed miss.
+- **A PAN and its NMID are two cache entries.** The cache is keyed by what you sent, so checking the
+  NMID after the PAN, or the other way round, is a second check. A payload builds the NMID's key and
+  shares its entry.
+- **A hit carries `result.qris`** (`merchantName`, `city`, `criteria`, `acquirer`; never the PAN),
+  and **`result.rightOfReply`** when the QRIS owner has replied to the reports. Show `text` below the
+  warning, exactly as written, and do not translate it: `language` says what it is written in. Both
+  come back on `minimal` and `full`, and both are kept in the cache.
+
 **There is no `domain()` builder**, and this is deliberate rather than an omission. The Tracive API
-indexes exactly five identifier types, so a domain key would match nothing and the miss would still
+indexes exactly six identifier types, so a domain key would match nothing and the miss would still
 cost a credit. Domain checking is planned for a future release built on similarity search, which
 does not fit exact-match keys; adding it then is not a breaking change.
 

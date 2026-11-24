@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { FakeClock, FakeTransport, jsonResponse } from './support/fakes';
 import * as publicSurface from '../index';
+import type { QrisCriteria, QueryKind } from '../index';
 import { TraciveMode } from '../model/TraciveMode';
 import { InMemoryTokenStore } from '../oauth/TokenStore';
 import { TraciveQuery } from '../query/TraciveQuery';
@@ -173,6 +174,31 @@ describe('there is no domain query builder', () => {
     for (const name of Object.keys(publicSurface)) {
       expect(name.toLowerCase()).not.toContain('domain');
     }
+  });
+});
+
+describe('the identifier types', () => {
+  it('include QRIS, with its three builders', () => {
+    expect(publicSurface.QUERY_KINDS).toEqual([
+      'PHONE',
+      'EMAIL',
+      'BANK',
+      'CRYPTO',
+      'USERNAME',
+      'QRIS',
+    ]);
+    for (const name of ['qris', 'qrisNmid', 'qrisPan']) {
+      expect(typeof (TraciveQuery as unknown as Record<string, unknown>)[name]).toBe('function');
+    }
+  });
+
+  it('are an open union, so the next type the API adds breaks no exhaustive switch', () => {
+    // These two lines compile only while both unions stay open: `npm run typecheck` is the
+    // assertion, and closing either union fails it.
+    const later: QueryKind = 'ADDED_LATER';
+    const criteria: QrisCriteria = 'ADDED_LATER';
+    expect(publicSurface.QUERY_KINDS).not.toContain(later);
+    expect(criteria).toBe(later);
   });
 });
 

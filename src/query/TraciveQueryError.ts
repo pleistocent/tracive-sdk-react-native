@@ -25,6 +25,16 @@ export type QueryRejectionReason =
   | 'empty_platform'
   | 'empty_chain'
   | 'empty_address'
+  /** The text is not a QRIS: no `000201` start, broken framing, or no CRC at the end. */
+  | 'not_a_qris'
+  /** A QRIS whose CRC does not match: edited or misread. Say the QR is not intact. */
+  | 'qris_crc_mismatch'
+  /** An intact QRIS with no NMID in it. */
+  | 'qris_no_nmid'
+  /** Not a micro or small business (UMI, UKE): no other QRIS is ever in Tracive's reports. */
+  | 'qris_not_indexed'
+  | 'not_an_nmid'
+  | 'not_a_pan'
   | 'invalid_document_id';
 
 /**

@@ -33,6 +33,13 @@ function json(status: number, body: unknown): HttpResponse {
   };
 }
 
+// The two QRIS presets on the sample's screen answer as the sandbox does, so the demo shows a QRIS
+// hit and the owner's reply too.
+const QRIS_ANSWERS: Readonly<Record<string, { tier: 'HIGH' | 'CAUTION'; reports: number }>> = {
+  QRIS_ID9900000000201: { tier: 'HIGH', reports: 9 },
+  QRIS_ID9900000000203: { tier: 'CAUTION', reports: 2 },
+};
+
 function decodeObject(raw: string | undefined): Record<string, unknown> {
   if (raw === undefined || raw === '') return {};
   try {
@@ -107,8 +114,10 @@ export class DemoBackend implements HttpTransport {
     let sum = 7;
     for (let i = 0; i < key.length; i += 1) sum += key.charCodeAt(i);
     const bucket = key === '' ? 0 : sum % 10;
-    const [tier, reports] =
-      bucket <= 1
+    const qrisAnswer = QRIS_ANSWERS[key];
+    const [tier, reports] = qrisAnswer
+      ? [qrisAnswer.tier, qrisAnswer.reports]
+      : bucket <= 1
         ? (['HIGH', 27] as const)
         : bucket <= 3
           ? (['ELEVATED', 9] as const)
@@ -145,6 +154,24 @@ export class DemoBackend implements HttpTransport {
                 fromCredibleReport: true,
               },
             ],
+          }
+        : {}),
+      ...(key.startsWith('QRIS_') && reports > 0
+        ? {
+            qris: {
+              merchantName: 'SANDBOX SAMPLE STORE',
+              city: 'BANDUNG',
+              criteria: 'UMI',
+              acquirer: 'ID.DANA.WWW',
+            },
+          }
+        : {}),
+      ...(key === 'QRIS_ID9900000000203'
+        ? {
+            rightOfReply: {
+              text: 'We own this business. This QRIS sits at our till and we never sell online.',
+              language: 'en',
+            },
           }
         : {}),
       billing: { creditSource: 'USER', unitsCharged: 1 },

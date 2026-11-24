@@ -89,6 +89,14 @@ describe('toTransactionRecordCopy', () => {
     expect(copy.origin).toBe('SERVER');
     expect(copy.disclaimer).toBe('legal text');
   });
+
+  it("keeps a QRIS hit's details and its owner's reply", () => {
+    const qris = { merchantName: 'TOKO CONTOH', criteria: 'UMI' };
+    const rightOfReply = { text: 'Kami pemilik usaha ini.', language: 'id' };
+    const copy = toTransactionRecordCopy(result({ qris, rightOfReply }));
+    expect(copy.qris).toEqual(qris);
+    expect(copy.rightOfReply).toEqual(rightOfReply);
+  });
 });
 
 describe.each([

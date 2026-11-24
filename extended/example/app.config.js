@@ -15,7 +15,7 @@ module.exports = {
   expo: {
     name: overrides.baseUrl ? 'Reports RN Local' : 'Reports RN',
     slug: 'tracive-extended-rn-example',
-    version: '0.2.2',
+    version: '0.3.0',
     orientation: 'default',
     icon: './assets/icon.png',
     userInterfaceStyle: 'light',

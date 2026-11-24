@@ -55,6 +55,13 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
         platform: input.platform as string,
         handle: input.handle as string,
       });
+    case 'QRIS': {
+      const fields = ['payload', 'nmid', 'pan'].filter((name) => name in input);
+      if (fields.length !== 1) throw new Error(`${vector.id} names the QRIS ${fields.length} ways`);
+      if ('payload' in input) return TraciveQuery.qris(input.payload as string);
+      if ('nmid' in input) return TraciveQuery.qrisNmid(input.nmid as string);
+      return TraciveQuery.qrisPan(input.pan as string);
+    }
     case 'RAW':
       throw new Error('RAW vectors exercise the record-key guard directly, not a factory');
   }
@@ -62,13 +69,13 @@ function buildQuery(vector: GrammarVector | RejectedVector): TraciveQuery {
 
 describe('shared grammar fixture', () => {
   it('is the version this suite was written against', () => {
-    expect(fixture.version).toBe(6);
+    expect(fixture.version).toBe(7);
   });
 
   it('carries the expected number of vectors and rejections', () => {
     // Pinned so that a fixture update that silently drops a case cannot pass unnoticed.
-    expect(fixture.vectors).toHaveLength(42);
-    expect(fixture.rejected).toHaveLength(21);
+    expect(fixture.vectors).toHaveLength(61);
+    expect(fixture.rejected).toHaveLength(37);
     expect(fixture.documentIdGuard.cases).toHaveLength(9);
   });
 });

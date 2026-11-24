@@ -11,7 +11,7 @@ export const BANK_CODES_PATH = join(process.cwd(), 'test', 'fixtures', 'bank-cod
 
 export interface GrammarVector {
   readonly id: string;
-  readonly type: 'PHONE' | 'EMAIL' | 'BANK' | 'CRYPTO' | 'USERNAME';
+  readonly type: 'PHONE' | 'EMAIL' | 'BANK' | 'CRYPTO' | 'USERNAME' | 'QRIS';
   readonly input: Readonly<Record<string, string | boolean>>;
   readonly expected: string;
   readonly why?: string;
@@ -19,7 +19,7 @@ export interface GrammarVector {
 
 export interface RejectedVector {
   readonly id: string;
-  readonly type: 'PHONE' | 'EMAIL' | 'BANK' | 'CRYPTO' | 'USERNAME' | 'RAW';
+  readonly type: 'PHONE' | 'EMAIL' | 'BANK' | 'CRYPTO' | 'USERNAME' | 'QRIS' | 'RAW';
   readonly input: Readonly<Record<string, string | boolean>>;
   readonly reason: string;
   readonly why?: string;
